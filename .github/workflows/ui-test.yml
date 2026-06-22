@@ -132,6 +132,22 @@ jobs:
           path: screenshots/
           retention-days: 7
 
+      - name: 发布 Allure 报告到 GitHub Pages
+        if: always()
+        uses: peaceiris/actions-gh-pages@v4.0.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./report/allure_report
+          destination_dir: reports/${{ github.run_number }}
+          keep_files: true
+
+      - name: 输出报告访问地址
+        if: always()
+        run: |
+          OWNER=$(echo "${{ github.repository }}" | cut -d'/' -f1)
+          REPONAME=$(echo "${{ github.repository }}" | cut -d'/' -f2)
+          echo "📊 Allure 报告地址: https://${OWNER}.github.io/${REPONAME}/reports/${{ github.run_number }}/index.html"
+
       - name: 钉钉通知
         if: always() && github.event.inputs.notify != 'false'
         run: |
