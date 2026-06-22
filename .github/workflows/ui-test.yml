@@ -51,30 +51,13 @@ concurrency:
 
 jobs:
   ui-test:
-    runs-on: ubuntu-latest
+    # runs-on: ubuntu-latest   # GitHub 公共云（无法访问内网）
+    runs-on: self-hosted        # 内网自托管 Runner（可访问 mes.jaka.com）
     timeout-minutes: 30
 
     steps:
       - name: 检出代码
         uses: actions/checkout@v4.2.2
-
-      - name: 配置 Python 3.8
-        uses: actions/setup-python@v5.6.0
-        with:
-          python-version: '3.8'
-          cache: 'pip'
-
-      - name: 安装 Java 11
-        uses: actions/setup-java@v4.7.1
-        with:
-          java-version: '11'
-          distribution: 'temurin'
-
-      - name: 安装 Allure CLI
-        run: |
-          wget -q https://github.com/allure-framework/allure2/releases/download/2.24.1/allure-2.24.1.tgz
-          tar -xzf allure-2.24.1.tgz
-          echo "${{ github.workspace }}/allure-2.24.1/bin" >> $GITHUB_PATH
 
       - name: 安装 Python 依赖
         run: |
@@ -82,9 +65,7 @@ jobs:
           pip install -r requirements-ci.txt
 
       - name: 安装 Playwright 浏览器
-        run: |
-          playwright install chromium
-          playwright install-deps chromium
+        run: playwright install chromium
 
       - name: 执行 UI 测试
         env:
@@ -92,13 +73,14 @@ jobs:
           TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
           TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
           ALLURE_CMD: allure
+        shell: pwsh
         run: |
-          MARKS="${{ github.event.inputs.pytest_marks }}"
-          KEYWORD="${{ github.event.inputs.pytest_keyword }}"
-          ARGS=""
-          [ -n "$MARKS" ] && ARGS="$ARGS -m $MARKS"
-          [ -n "$KEYWORD" ] && ARGS="$ARGS -k $KEYWORD"
-          python ci_run.py $ARGS
+          $MARKS = "${{ github.event.inputs.pytest_marks }}"
+          $KEYWORD = "${{ github.event.inputs.pytest_keyword }}"
+          $ARGS = @()
+          if ($MARKS) { $ARGS += "-m"; $ARGS += $MARKS }
+          if ($KEYWORD) { $ARGS += "-k"; $ARGS += $KEYWORD }
+          python ci_run.py @ARGS
 
       - name: 上传 Allure 原始数据
         if: always()
@@ -143,10 +125,13 @@ jobs:
 
       - name: 输出报告访问地址
         if: always()
+        shell: pwsh
         run: |
-          OWNER=$(echo "${{ github.repository }}" | cut -d'/' -f1)
-          REPONAME=$(echo "${{ github.repository }}" | cut -d'/' -f2)
-          echo "📊 Allure 报告地址: https://${OWNER}.github.io/${REPONAME}/reports/${{ github.run_number }}/index.html"
+          $repo = "${{ github.repository }}"
+          $parts = $repo.Split('/')
+          $owner = $parts[0]
+          $repoName = $parts[1]
+          Write-Output "📊 Allure 报告地址: https://$owner.github.io/$repoName/reports/${{ github.run_number }}/index.html"
 
       - name: 钉钉通知
         if: always() && github.event.inputs.notify != 'false'
