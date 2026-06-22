@@ -1,0 +1,62 @@
+# ── 基础镜像：Python 3.8 slim ──
+FROM python:3.8-slim
+
+LABEL maintainer="qa-team" \
+      description="Playwright UI 自动化测试 CI 镜像"
+
+# ── 安装系统依赖 ──
+# libglib2.0-0    : ddddocr / onnxruntime 依赖
+# libnss3 等      : Chromium 依赖
+# wget / unzip    : 安装 Allure CLI
+# openjdk-11-jre  : Allure CLI 依赖
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libglib2.0-0 \
+        libnss3 \
+        libnspr4 \
+        libatk1.0-0 \
+        libatk-bridge2.0-0 \
+        libcups2 \
+        libdrm2 \
+        libxkbcommon0 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxfixes3 \
+        libxrandr2 \
+        libgbm1 \
+        libasound2 \
+        libpango-1.0-0 \
+        libcairo2 \
+        fonts-liberation \
+        wget \
+        unzip \
+        openjdk-11-jre-headless \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── 安装 Allure CLI ──
+ENV ALLURE_VERSION=2.24.1
+RUN wget -q "https://github.com/allure-framework/allure2/releases/download/${ALLURE_VERSION}/allure-${ALLURE_VERSION}.tgz" \
+    -O /tmp/allure.tgz \
+    && tar -xzf /tmp/allure.tgz -C /opt/ \
+    && ln -s /opt/allure-${ALLURE_VERSION}/bin/allure /usr/local/bin/allure \
+    && rm /tmp/allure.tgz
+
+# ── 安装 Python 依赖 ──
+WORKDIR /app
+COPY requirements-ci.txt .
+RUN pip install --no-cache-dir -r requirements-ci.txt
+
+# ── 安装 Playwright 浏览器（仅 chromium，节省空间）──
+RUN playwright install chromium \
+    && playwright install-deps chromium
+
+# ── 复制项目代码 ──
+COPY . .
+
+# ── 运行时环境变量默认值 ──
+ENV ENV=test \
+    ALLURE_CMD=allure \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# ── 入口命令（CI 调用时可覆盖）──
+CMD ["python", "ci_run.py"]

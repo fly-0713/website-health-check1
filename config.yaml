@@ -1,0 +1,27 @@
+# 多环境配置文件
+# 通过环境变量 ENV 切换：set ENV=staging / set ENV=production
+# 默认使用 test 环境
+
+test:
+  base_url: "https://mes.jaka.com/"
+  headless: false
+  timeout: 10000
+  accounts:
+    - username: "15188378867"
+      password: "Jaka123456"
+
+staging:
+  base_url: "https://mes-staging.jaka.com/"
+  headless: false
+  timeout: 10000
+  accounts:
+    - username: "<from-env>"
+      password: "<from-env>"
+
+production:
+  base_url: "https://mes.jaka.com/"
+  headless: true
+  timeout: 15000
+  accounts:
+    - username: "<from-env>"
+      password: "<from-env>"

@@ -1,0 +1,3 @@
+# CI 环境额外依赖（基于 requirements.txt 扩展）
+-r requirements.txt
+requests>=2.31.0

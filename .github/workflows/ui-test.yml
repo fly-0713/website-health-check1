@@ -1,0 +1,172 @@
+name: UI 自动化测试
+
+on:
+  # 定时触发：工作日每天 02:00 UTC（北京时间 10:00）
+  schedule:
+    - cron: '0 2 * * 1-5'
+
+  # 手动触发，支持参数选择
+  workflow_dispatch:
+    inputs:
+      env:
+        description: '测试环境'
+        required: true
+        default: 'test'
+        type: choice
+        options: [test, staging, production]
+      pytest_marks:
+        description: 'pytest -m 标记（为空运行全部）'
+        required: false
+        default: ''
+      pytest_keyword:
+        description: 'pytest -k 关键字（为空运行全部）'
+        required: false
+        default: ''
+      notify:
+        description: '是否发送通知'
+        required: false
+        default: 'true'
+        type: boolean
+
+  # Push 触发（仅关键目录变更时触发）
+  push:
+    branches: [main, develop]
+    paths:
+      - 'testcases/**'
+      - 'pages/**'
+      - 'common/**'
+      - 'config.yaml'
+      - 'requirements*.txt'
+      - 'ci_run.py'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'testcases/**'
+      - 'pages/**'
+
+# 同一分支只保留最新一次运行
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ui-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 配置 Python 3.8
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.8'
+          cache: 'pip'
+
+      - name: 安装 Java 11
+        uses: actions/setup-java@v4
+        with:
+          java-version: '11'
+          distribution: 'temurin'
+
+      - name: 安装 Allure CLI
+        run: |
+          wget -q https://github.com/allure-framework/allure2/releases/download/2.24.1/allure-2.24.1.tgz
+          tar -xzf allure-2.24.1.tgz
+          echo "${{ github.workspace }}/allure-2.24.1/bin" >> $GITHUB_PATH
+
+      - name: 安装 Python 依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-ci.txt
+
+      - name: 安装 Playwright 浏览器
+        run: |
+          playwright install chromium
+          playwright install-deps chromium
+
+      - name: 执行 UI 测试
+        env:
+          ENV: ${{ github.event.inputs.env || 'test' }}
+          TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
+          TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+          ALLURE_CMD: allure
+        run: |
+          MARKS="${{ github.event.inputs.pytest_marks }}"
+          KEYWORD="${{ github.event.inputs.pytest_keyword }}"
+          ARGS=""
+          [ -n "$MARKS" ] && ARGS="$ARGS -m $MARKS"
+          [ -n "$KEYWORD" ] && ARGS="$ARGS -k $KEYWORD"
+          python ci_run.py $ARGS
+
+      - name: 上传 Allure 原始数据
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results-${{ github.run_number }}
+          path: report/allure_results/
+          retention-days: 7
+
+      - name: 上传 Allure HTML 报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-report-${{ github.run_number }}
+          path: report/allure_report/
+          retention-days: 30
+
+      - name: 上传 pytest-HTML 报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-html-report-${{ github.run_number }}
+          path: report/html/report.html
+          retention-days: 30
+
+      - name: 上传失败截图
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failure-screenshots-${{ github.run_number }}
+          path: screenshots/
+          retention-days: 7
+
+      - name: 钉钉通知
+        if: always() && github.event.inputs.notify != 'false'
+        run: |
+          STATUS="${{ job.status }}"
+          EMOJI="✅"
+          [ "$STATUS" != "success" ] && EMOJI="❌"
+          ENV="${{ github.event.inputs.env || 'test' }}"
+          curl -s -X POST "${{ secrets.DINGTALK_WEBHOOK }}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"msgtype\": \"markdown\",
+              \"markdown\": {
+                \"title\": \"UI自动化测试报告\",
+                \"text\": \"## ${EMOJI} UI自动化测试完成\\n\\n- **环境**: ${ENV}\\n- **状态**: ${STATUS}\\n- **分支**: ${{ github.ref_name }}\\n- **运行**: [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"
+              }
+            }" || true
+
+      - name: 飞书通知
+        if: failure() && github.event.inputs.notify != 'false'
+        run: |
+          curl -s -X POST "${{ secrets.FEISHU_WEBHOOK }}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"msg_type\": \"interactive\",
+              \"card\": {
+                \"header\": {
+                  \"title\": {\"tag\": \"plain_text\", \"content\": \"❌ UI自动化测试失败\"},
+                  \"template\": \"red\"
+                },
+                \"elements\": [{
+                  \"tag\": \"div\",
+                  \"text\": {
+                    \"tag\": \"lark_md\",
+                    \"content\": \"**环境**: ${{ github.event.inputs.env || 'test' }}\\n**分支**: ${{ github.ref_name }}\\n[查看详情](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"
+                  }
+                }]
+              }
+            }" || true
