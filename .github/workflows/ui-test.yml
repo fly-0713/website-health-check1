@@ -134,40 +134,29 @@ jobs:
           Write-Output "📊 Allure 报告地址: https://$owner.github.io/$repoName/reports/${{ github.run_number }}/index.html"
 
       - name: 钉钉通知
-        if: always() && github.event.inputs.notify != 'false'
+        if: always()
+        shell: pwsh
         run: |
-          STATUS="${{ job.status }}"
-          EMOJI="✅"
-          [ "$STATUS" != "success" ] && EMOJI="❌"
-          ENV="${{ github.event.inputs.env || 'test' }}"
-          curl -s -X POST "${{ secrets.DINGTALK_WEBHOOK }}" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"msgtype\": \"markdown\",
-              \"markdown\": {
-                \"title\": \"UI自动化测试报告\",
-                \"text\": \"## ${EMOJI} UI自动化测试完成\\n\\n- **环境**: ${ENV}\\n- **状态**: ${STATUS}\\n- **分支**: ${{ github.ref_name }}\\n- **运行**: [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"
-              }
-            }" || true
-
-      - name: 飞书通知
-        if: failure() && github.event.inputs.notify != 'false'
-        run: |
-          curl -s -X POST "${{ secrets.FEISHU_WEBHOOK }}" \
-            -H "Content-Type: application/json" \
-            -d "{
-              \"msg_type\": \"interactive\",
-              \"card\": {
-                \"header\": {
-                  \"title\": {\"tag\": \"plain_text\", \"content\": \"❌ UI自动化测试失败\"},
-                  \"template\": \"red\"
-                },
-                \"elements\": [{
-                  \"tag\": \"div\",
-                  \"text\": {
-                    \"tag\": \"lark_md\",
-                    \"content\": \"**环境**: ${{ github.event.inputs.env || 'test' }}\\n**分支**: ${{ github.ref_name }}\\n[查看详情](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"
-                  }
-                }]
-              }
-            }" || true
+          $status = "${{ job.status }}"
+          $emoji  = if ($status -eq 'success') { '✅' } else { '❌' }
+          $env_name = "${{ github.event.inputs.env }}" ; if (-not $env_name) { $env_name = 'test' }
+          $runUrl = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          $body = @{
+            msgtype = 'markdown'
+            markdown = @{
+              title = 'UI自动化测试报告'
+              text  = "## $emoji UI自动化测试完成`n`n" +
+                      "- **环境**: $env_name`n" +
+                      "- **状态**: $status`n" +
+                      "- **分支**: ${{ github.ref_name }}`n" +
+                      "- **触发**: ${{ github.actor }}`n" +
+                      "- **运行**: [#${{ github.run_number }}]($runUrl)"
+            }
+          } | ConvertTo-Json -Depth 5
+          try {
+            Invoke-RestMethod -Uri '${{ secrets.DINGTALK_WEBHOOK }}' `
+              -Method Post -ContentType 'application/json' -Body $body
+            Write-Output '钉钉通知发送成功'
+          } catch {
+            Write-Warning "钉钉通知发送失败: $_"
+          }
