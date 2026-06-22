@@ -56,16 +56,16 @@ jobs:
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       - name: 配置 Python 3.8
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v5.6.0
         with:
           python-version: '3.8'
           cache: 'pip'
 
       - name: 安装 Java 11
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v4.7.1
         with:
           java-version: '11'
           distribution: 'temurin'
@@ -102,7 +102,7 @@ jobs:
 
       - name: 上传 Allure 原始数据
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: allure-results-${{ github.run_number }}
           path: report/allure_results/
@@ -110,7 +110,7 @@ jobs:
 
       - name: 上传 Allure HTML 报告
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: allure-report-${{ github.run_number }}
           path: report/allure_report/
@@ -118,7 +118,7 @@ jobs:
 
       - name: 上传 pytest-HTML 报告
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: pytest-html-report-${{ github.run_number }}
           path: report/html/report.html
@@ -126,7 +126,7 @@ jobs:
 
       - name: 上传失败截图
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v4.6.2
         with:
           name: failure-screenshots-${{ github.run_number }}
           path: screenshots/
