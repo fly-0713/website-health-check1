@@ -51,13 +51,27 @@ concurrency:
 
 jobs:
   ui-test:
-    runs-on: ubuntu-latest   # GitHub 公共云（无法访问内网）
+    runs-on: ubuntu-latest   # GitHub 公共云
     # runs-on: self-hosted        # 内网自托管 Runner（可访问 mes.jaka.com）
     timeout-minutes: 30
-
+  
     steps:
       - name: 检出代码
         uses: actions/checkout@v4.2.2
+
+      - name: 安装 Java（Allure 依赖）
+        uses: actions/setup-java@v4.7.1
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: 安装 Allure CLI
+        run: |
+          ALLURE_VERSION=2.27.0
+          wget -q https://github.com/allure-framework/allure2/releases/download/${ALLURE_VERSION}/allure-${ALLURE_VERSION}.tgz
+          tar -zxf allure-${ALLURE_VERSION}.tgz -C /opt/
+          ln -sf /opt/allure-${ALLURE_VERSION}/bin/allure /usr/local/bin/allure
+          allure --version
 
       - name: 安装 Python 依赖
         run: |
@@ -73,14 +87,13 @@ jobs:
           TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
           TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
           ALLURE_CMD: allure
-        shell: pwsh
         run: |
-          $MARKS = "${{ github.event.inputs.pytest_marks }}"
-          $KEYWORD = "${{ github.event.inputs.pytest_keyword }}"
-          $ARGS = @()
-          if ($MARKS) { $ARGS += "-m"; $ARGS += $MARKS }
-          if ($KEYWORD) { $ARGS += "-k"; $ARGS += $KEYWORD }
-          python ci_run.py @ARGS
+          ARGS=()
+          MARKS="${{ github.event.inputs.pytest_marks }}"
+          KEYWORD="${{ github.event.inputs.pytest_keyword }}"
+          [ -n "$MARKS" ] && ARGS+=("-m" "$MARKS")
+          [ -n "$KEYWORD" ] && ARGS+=("-k" "$KEYWORD")
+          python ci_run.py "${ARGS[@]}"
 
       - name: 上传 Allure 原始数据
         if: always()
@@ -134,41 +147,27 @@ jobs:
 
       - name: 输出报告访问地址
         if: always()
-        shell: pwsh
         run: |
-          $repo = "${{ github.repository }}"
-          $parts = $repo.Split('/')
-          $owner = $parts[0]
-          $repoName = $parts[1]
-          Write-Output "=================================================="
-          Write-Output "📊 最新报告（每次覆盖）: https://$owner.github.io/$repoName/latest/index.html"
-          Write-Output "📅 本次报告（永久保留）: https://$owner.github.io/$repoName/reports/${{ github.run_number }}/index.html"
-          Write-Output "=========================================="
+          OWNER=$(echo "${{ github.repository }}" | cut -d'/' -f1)
+          REPO=$(echo "${{ github.repository }}" | cut -d'/' -f2)
+          echo "=================================================="
+          echo "📊 最新报告（每次覆盖）: https://$OWNER.github.io/$REPO/latest/index.html"
+          echo "📅 本次报告（永久保留）: https://$OWNER.github.io/$REPO/reports/${{ github.run_number }}/index.html"
+          echo "=========================================="
 
       - name: 钉钉通知
         if: always()
-        shell: pwsh
         run: |
-          $status = "${{ job.status }}"
-          $emoji  = if ($status -eq 'success') { '✅' } else { '❌' }
-          $env_name = "${{ github.event.inputs.env }}" ; if (-not $env_name) { $env_name = 'test' }
-          $runUrl = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          $body = @{
-            msgtype = 'markdown'
-            markdown = @{
-              title = 'UI自动化测试报告'
-              text  = "## $emoji UI自动化测试完成`n`n" +
-                      "- **环境**: $env_name`n" +
-                      "- **状态**: $status`n" +
-                      "- **分支**: ${{ github.ref_name }}`n" +
-                      "- **触发**: ${{ github.actor }}`n" +
-                      "- **运行**: [#${{ github.run_number }}]($runUrl)"
-            }
-          } | ConvertTo-Json -Depth 5
-          try {
-            Invoke-RestMethod -Uri '${{ secrets.DINGTALK_WEBHOOK }}' `
-              -Method Post -ContentType 'application/json' -Body $body
-            Write-Output '钉钉通知发送成功'
-          } catch {
-            Write-Warning "钉钉通知发送失败: $_"
-          }
+          STATUS="${{ job.status }}"
+          EMOJI="✅"
+          [ "$STATUS" != "success" ] && EMOJI="❌"
+          ENV_NAME="${{ github.event.inputs.env }}"
+          [ -z "$ENV_NAME" ] && ENV_NAME="test"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          OWNER=$(echo "${{ github.repository }}" | cut -d'/' -f1)
+          REPO=$(echo "${{ github.repository }}" | cut -d'/' -f2)
+          REPORT_URL="https://$OWNER.github.io/$REPO/latest/index.html"
+          curl -s -X POST "${{ secrets.DINGTALK_WEBHOOK }}" \
+            -H 'Content-Type: application/json' \
+            -d "{\"msgtype\":\"markdown\",\"markdown\":{\"title\":\"UI自动化测试报告\",\"text\":\"## ${EMOJI} UI自动化测试完成\n\n- **环境**: ${ENV_NAME}\n- **状态**: ${STATUS}\n- **分支**: ${{ github.ref_name }}\n- **触发**: ${{ github.actor }}\n- **运行**: [#${{ github.run_number }}](${RUN_URL})\n- **报告**: [查看Allure报告](${REPORT_URL})\"}}"\
+            || echo '钉钉通知发送失败（不影响流程）'
