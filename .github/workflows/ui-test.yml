@@ -158,34 +158,19 @@ jobs:
       - name: 钉钉通知
         if: always()
         run: |
-          python - <<'EOF'
-          import os, json, urllib.request
-          status = "${{ job.status }}"
-          emoji  = "\u2705" if status == "success" else "\u274c"
-          env_name = "${{ github.event.inputs.env }}" or "test"
-          run_url  = "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          repo     = "${{ github.repository }}"
-          owner, repo_name = repo.split("/", 1)
-          report_url = f"https://{owner}.github.io/{repo_name}/latest/index.html"
-          text = (
-              f"## {emoji} UI\u81ea\u52a8\u5316\u6d4b\u8bd5\u5b8c\u6210\n\n"
-              f"- **\u73af\u5883**: {env_name}\n"
-              f"- **\u72b6\u6001**: {status}\n"
-              f"- **\u5206\u652f**: ${{ github.ref_name }}\n"
-              f"- **\u89e6\u53d1**: ${{ github.actor }}\n"
-              f"- **\u8fd0\u884c**: [#${{ github.run_number }}]({run_url})\n"
-              f"- **\u62a5\u544a**: [\u67e5\u770bAllure\u62a5\u544a]({report_url})"
-          )
-          payload = json.dumps({"msgtype": "markdown", "markdown": {"title": "UI\u81ea\u52a8\u5316\u6d4b\u8bd5\u62a5\u544a", "text": text}}).encode()
-          webhook = "${{ secrets.DINGTALK_WEBHOOK }}"
-          if not webhook:
-              print("\u672a\u914d\u7f6e DINGTALK_WEBHOOK\uff0c\u8df3\u8fc7\u901a\u77e5")
-          else:
-              req = urllib.request.Request(webhook, data=payload, headers={"Content-Type": "application/json"})
-              try:
-                  urllib.request.urlopen(req, timeout=10)
-                  print("\u9489\u9489\u901a\u77e5\u53d1\u9001\u6210\u529f")
-              except Exception as e:
-                  print(f"\u9489\u9489\u901a\u77e5\u53d1\u9001\u5931\u8d25: {e}")
-          EOF
-
+          STATUS="${{ job.status }}"
+          EMOJI="✅"
+          [ "$STATUS" != "success" ] && EMOJI="❌"
+          ENV_NAME="${{ github.event.inputs.env }}"
+          [ -z "$ENV_NAME" ] && ENV_NAME="test"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          OWNER=$(echo "${{ github.repository }}" | cut -d'/' -f1)
+          REPO=$(echo "${{ github.repository }}" | cut -d'/' -f2)
+          REPORT_URL="https://$OWNER.github.io/$REPO/latest/index.html"
+          MSG="## ${EMOJI} UI自动化测试完成\n\n- **环境**: ${ENV_NAME}\n- **状态**: ${STATUS}\n- **分支**: ${{ github.ref_name }}\n- **触发**: ${{ github.actor }}\n- **运行**: [#${{ github.run_number }}](${RUN_URL})\n- **报告**: [查看Allure报告](${REPORT_URL})"
+          curl -s -X POST "${{ secrets.DINGTALK_WEBHOOK }}" \
+            -H 'Content-Type: application/json' \
+            -d "{\"msgtype\":\"markdown\",\"markdown\":{\"title\":\"UI自动化测试报告\",\"text\":\"${MSG}\"}}" \
+            || echo '钉钉通知发送失败（不影响流程）'
+      
+      
