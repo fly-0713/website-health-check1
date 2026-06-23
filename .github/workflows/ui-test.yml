@@ -123,6 +123,15 @@ jobs:
           destination_dir: reports/${{ github.run_number }}
           keep_files: true
 
+      - name: 更新最新报告入口页
+        if: always()
+        uses: peaceiris/actions-gh-pages@v4.0.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          keep_files: true
+          publish_dir: ./report/allure_report
+          destination_dir: latest
+
       - name: 输出报告访问地址
         if: always()
         shell: pwsh
@@ -131,7 +140,10 @@ jobs:
           $parts = $repo.Split('/')
           $owner = $parts[0]
           $repoName = $parts[1]
-          Write-Output "📊 Allure 报告地址: https://$owner.github.io/$repoName/reports/${{ github.run_number }}/index.html"
+          Write-Output "=================================================="
+          Write-Output "📊 最新报告（每次覆盖）: https://$owner.github.io/$repoName/latest/index.html"
+          Write-Output "📅 本次报告（永久保留）: https://$owner.github.io/$repoName/reports/${{ github.run_number }}/index.html"
+          Write-Output "=========================================="
 
       - name: 钉钉通知
         if: always()
