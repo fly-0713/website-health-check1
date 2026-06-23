@@ -1,9 +1,9 @@
 name: UI 自动化测试
 
 on:
-  # 定时触发：工作日每天 03:35 UTC（北京时间 11:35）
+  # 定时触发：工作日每天 05:38 UTC（北京时间 11:35）
   schedule:
-    - cron: '35 3 * * 1-5'
+    - cron: '38 5 * * 1-5'
 
   # 手动触发，支持参数选择
   workflow_dispatch:
@@ -51,7 +51,7 @@ concurrency:
 
 jobs:
   ui-test:
-    runs-on: ubuntu-latest   # GitHub 公共云
+    runs-on: ubuntu-latest   # GitHub 公共云（无法访问内网）
     # runs-on: self-hosted        # 内网自托管 Runner（可访问 mes.jaka.com）
     timeout-minutes: 30
   
