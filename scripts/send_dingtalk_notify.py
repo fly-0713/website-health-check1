@@ -38,6 +38,10 @@ def load_test_results(allure_dir: str) -> dict:
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
+            
+            # 跳过不是测试结果的文件
+            if "status" not in data:
+                continue
                 
             if data.get("status") == "passed":
                 results["passed"] += 1
@@ -51,10 +55,26 @@ def load_test_results(allure_dir: str) -> dict:
             
             results["total"] += 1
             
-            # 🔥 读取 duration（单位：毫秒，转换为秒）
-            if "time" in data:
-                duration_ms = data["time"].get("duration", 0)
-                results["durations"].append(duration_ms / 1000)
+            # 🔥 尝试多种方式获取 duration
+            duration_sec = 0
+            
+            # 方式1: data["time"]["duration"] (毫秒)
+            if "time" in data and isinstance(data["time"], dict):
+                duration_sec = data["time"].get("duration", 0) / 1000
+            
+            # 方式2: data["duration"] (毫秒)
+            if duration_sec == 0 and "duration" in data:
+                duration_sec = data["duration"] / 1000
+            
+            # 方式3: data["stop"] - data["start"] (毫秒)
+            if duration_sec == 0 and "stop" in data and "start" in data:
+                duration_sec = (data["stop"] - data["start"]) / 1000
+            
+            # 方式4: 如果还是0，从文件名中的时间戳获取（可选）
+            
+            if duration_sec > 0:
+                results["durations"].append(duration_sec)
+                print(f"   - 用例 {data.get('name', 'unknown')} 耗时: {duration_sec:.2f}秒")
                 
         except Exception as e:
             print(f"解析 Allure 文件失败 {file_path}: {e}")
@@ -104,6 +124,12 @@ def send_dingtalk_notification(webhook: str, site_name: str, env: str, results: 
     # 🔥 使用北京时间
     beijing_time = datetime.now(BEIJING_TZ).strftime('%Y-%m-%d %H:%M:%S')
     
+    # 🔥 格式化响应时间，如果为0则显示 "N/A"
+    if results['avg_duration'] > 0:
+        duration_display = f"{results['avg_duration']:.2f} 秒"
+    else:
+        duration_display = "N/A (请检查 Allure 结果)"
+    
     # 🔥 去掉"通过/总数"行，修改表格
     msg = f"""## {site_name}
 
@@ -113,7 +139,7 @@ def send_dingtalk_notification(webhook: str, site_name: str, env: str, results: 
 | **检测环境** | {env} |
 | **检测状态** | **{status_text}** |
 | **响应状态码** | {results['status_code']} |
-| **响应时间** | {results['avg_duration']:.2f} 秒 |
+| **响应时间** | {duration_display} |
 | **错误信息** | {error_msg} |
 | **错误类型** | {results['error_type']} |
 """
@@ -176,6 +202,7 @@ def main():
     print(f"   - 通过: {results['passed']}")
     print(f"   - 失败: {results['failed']}")
     print(f"   - 平均响应时间: {results['avg_duration']:.2f} 秒")
+    print(f"   - 所有耗时: {results['durations']}")
     
     send_dingtalk_notification(webhook, site_name, env_name, results)
     
