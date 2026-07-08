@@ -9,8 +9,8 @@ from common.config import config
 jaka_login_data = [
     {
         "case_name": "JAKA官网正常登录",
-        "base_url": config.jaka_web_base_url,
-        "username": config.get_jaka_web_account(0)["username"],
-        "password": config.get_jaka_web_account(0)["password"],
+        "base_url": config.jaka_base_url,
+        "username": config.get_jaka_account(0)["username"],
+        "password": config.get_jaka_account(0)["password"],
     },
 ]

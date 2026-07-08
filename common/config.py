@@ -96,7 +96,7 @@ class Config:
     @property
     def jaka_base_url(self):
         """JAKA 官网 URL"""
-        return self.jaka_config.get("base_url", "https://www.jaka.com/zh")
+        return self.jaka_config.get("base_url", "https://www.jaka.com/")
     
     @property
     def jaka_accounts(self):
