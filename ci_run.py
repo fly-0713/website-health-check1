@@ -56,6 +56,11 @@ def main():
         help="最大失败次数后停止（默认: 5）"
     )
     parser.add_argument(
+        "--headless",
+        action="store_true",
+        help="无头模式运行浏览器（CI 环境自动启用）"
+    )
+    parser.add_argument(
         "-v", "--verbose",
         action="store_true",
         help="详细输出"
@@ -73,6 +78,10 @@ def main():
         "--tb=short",
     ]
     
+    # 如果指定了 --headless 或者是 CI 环境，传递 --headless 给 pytest
+    if args.headless or os.getenv("CI") == "true":
+        cmd.append("--headless")
+    
     if args.verbose:
         cmd.append("-v")
     
@@ -89,11 +98,12 @@ def main():
     logger.info(f"执行命令: {' '.join(cmd)}")
     logger.info(f"测试路径: {args.test_path}")
     logger.info(f"Allure 输出目录: {args.alluredir}")
+    logger.info(f"CI 环境: {os.getenv('CI', 'false')}")
+    logger.info(f"无头模式: {args.headless or os.getenv('CI') == 'true'}")
     
     # 执行测试
     result = subprocess.run(cmd, env=env)
     
-    # 返回退出码
     sys.exit(result.returncode)
 
 

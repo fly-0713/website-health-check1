@@ -41,22 +41,20 @@ def pytest_addoption(parser):
     )
 
 
-# shared_data 已改用文件存储方式（common/shared_data.py），
-# 数据持久化到 datas/shared_data.json，解耦测试依赖
-# 使用方式：from common.shared_data import shared_data
-
-
-# conftest.py 修改 browser fixture
-
 @pytest.fixture(scope="session")
 def browser(pytestconfig):
     """启动浏览器，session 级别共享"""
     from common.config import config
     
-    # 在 CI 环境中强制使用无头模式
-    headless = pytestconfig.getoption("--headless")
+    # 默认使用有头模式（本地调试）
+    headless = False
     
-    # 如果是 GitHub Actions 环境，强制使用无头模式
+    # 如果命令行显式传入 --headless，使用无头模式
+    if pytestconfig.getoption("--headless"):
+        headless = True
+        logger.info("通过命令行参数启用无头模式")
+    
+    # 如果是 GitHub Actions CI 环境，强制使用无头模式
     if os.getenv("CI") == "true":
         headless = True
         logger.info("检测到 CI 环境，强制使用无头模式")
@@ -64,7 +62,12 @@ def browser(pytestconfig):
     pw = sync_playwright().start()
     browser = pw.chromium.launch(
         headless=headless,
-        args=['--no-sandbox', '--disable-setuid-sandbox']  # CI 环境需要
+        args=[
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu'
+        ]
     )
     mode = "无头模式" if headless else "有头模式"
     logger.info(f"浏览器已启动（{mode}）")
