@@ -46,15 +46,26 @@ def pytest_addoption(parser):
 # 使用方式：from common.shared_data import shared_data
 
 
+# conftest.py 修改 browser fixture
+
 @pytest.fixture(scope="session")
 def browser(pytestconfig):
-    """\u542f\u52a8\u6d4f\u89c8\u5668\uff0csession \u7ea7\u522b\u5171\u4eab"""
-    # config \u5728\u6b64\u5904\u5bfc\u5165\uff0c\u786e\u4fdd ENV \u5df2\u7531 main.py \u8bbe\u7f6e\u540e\u518d\u52a0\u8f7d
-    from common.config import config  # noqa
-    # \u9ed8\u8ba4\u6709\u5934\u6a21\u5f0f\uff0c\u53ea\u6709\u663e\u5f0f\u4f20 --headless \u624d\u65e0\u5934
+    """启动浏览器，session 级别共享"""
+    from common.config import config
+    
+    # 在 CI 环境中强制使用无头模式
     headless = pytestconfig.getoption("--headless")
+    
+    # 如果是 GitHub Actions 环境，强制使用无头模式
+    if os.getenv("CI") == "true":
+        headless = True
+        logger.info("检测到 CI 环境，强制使用无头模式")
+    
     pw = sync_playwright().start()
-    browser = pw.chromium.launch(headless=headless)
+    browser = pw.chromium.launch(
+        headless=headless,
+        args=['--no-sandbox', '--disable-setuid-sandbox']  # CI 环境需要
+    )
     mode = "无头模式" if headless else "有头模式"
     logger.info(f"浏览器已启动（{mode}）")
     yield browser
