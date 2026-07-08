@@ -31,12 +31,16 @@ class Config:
     def _load_config(self):
         """加载配置文件并替换环境变量"""
         config_path = Path(__file__).parent.parent / "config.yaml"
-        
+
         with open(config_path, 'r', encoding='utf-8') as f:
             raw_config = yaml.safe_load(f)
-        
+
         # 递归替换所有配置中的环境变量
         self._config = self._replace_env_vars(raw_config)
+
+    def reload(self):
+        """重新加载配置文件（供 main.py 在设置环境变量后调用）"""
+        self._load_config()
     
     def _replace_env_vars(self, obj):
         """递归替换字符串中的 ${ENV_VAR} 格式的环境变量"""

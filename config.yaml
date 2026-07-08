@@ -1,7 +1,7 @@
-# 多环境配置文件
-# 通过环境变量 ENV 切换：set ENV=staging / set ENV=production
-# 默认使用 test 环境
-# CI 环境通过 GitHub Secrets 注入账号密码
+# UI 自动化测试配置
+# CI 环境通过 GitHub Secrets 注入账号密码：
+#   MES_USERNAME / MES_PASSWORD  -> MES 后台账号
+#   JAKA_USERNAME / JAKA_PASSWORD -> JAKA 官网账号
 
 # MES 后台配置
 mes:

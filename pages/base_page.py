@@ -17,10 +17,19 @@ class BasePage:
         self.page = page
         self.timeout = config.timeout
 
-    def navigate(self, url: str):
-        """打开页面"""
+    def navigate(self, url: str, wait_until: str = "load", timeout: int = None):
+        """打开页面
+
+        Args:
+            url: 目标 URL
+            wait_until: 页面加载完成条件，可选 load / domcontentloaded / networkidle / commit
+            timeout: 导航超时时间（毫秒），默认使用 Playwright 全局 30 秒
+        """
         logger.info(f"导航到: {url}")
-        self.page.goto(url)
+        kwargs = {"wait_until": wait_until}
+        if timeout is not None:
+            kwargs["timeout"] = timeout
+        self.page.goto(url, **kwargs)
 
     def click(self, locator: Locator):
         """点击元素"""
