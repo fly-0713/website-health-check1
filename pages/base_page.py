@@ -23,12 +23,14 @@ class BasePage:
         Args:
             url: 目标 URL
             wait_until: 页面加载完成条件，可选 load / domcontentloaded / networkidle / commit
-            timeout: 导航超时时间（毫秒），默认使用 Playwright 全局 30 秒
+            timeout: 导航超时时间（毫秒），默认 60 秒
         """
         logger.info(f"导航到: {url}")
         kwargs = {"wait_until": wait_until}
         if timeout is not None:
             kwargs["timeout"] = timeout
+        else:
+            kwargs["timeout"] = 60000  # 🔥 默认 60 秒
         self.page.goto(url, **kwargs)
 
     def click(self, locator: Locator):

@@ -38,8 +38,22 @@ class LoginPage(BasePage):
 
     def navigate(self, url: str):
         """打开登录页面并等待验证码加载"""
-        super().navigate(url)
-        self.wait_for_visible(self._captcha_image)
+        # 🔥 CI 环境增加超时时间到 60 秒，使用 domcontentloaded 策略
+        try:
+            super().navigate(url, wait_until="domcontentloaded", timeout=60000)
+        except Exception as e:
+            logger.warning(f"首次导航超时，重试: {e}")
+            # 重试一次
+            super().navigate(url, wait_until="domcontentloaded", timeout=60000)
+        
+        # 等待验证码图片加载
+        try:
+            self.wait_for_visible(self._captcha_image)
+        except Exception as e:
+            logger.warning(f"等待验证码超时，刷新页面重试: {e}")
+            self.page.reload()
+            self.wait_for_visible(self._captcha_image)
+        
         self._login_url = self.page.url
 
     def _get_captcha_text(self) -> str:
