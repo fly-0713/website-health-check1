@@ -114,10 +114,18 @@ def pytest_runtest_makereport(item, call):
         if page:
             case_name = item.nodeid.replace("::", "_").replace("/", "_")
             logger.error(f"测试失败，自动截图: {case_name}")
-            filepath = take_screenshot(page, case_name)
-            with open(filepath, "rb") as f:
-                allure.attach(
-                    f.read(),
-                    name=f"{case_name}_失败截图",
-                    attachment_type=allure.attachment_type.PNG,
-                )
+            
+            # 🔥 截图失败时捕获异常，不影响测试报告生成
+            try:
+                filepath = take_screenshot(page, case_name)
+                if filepath and os.path.exists(filepath):
+                    with open(filepath, "rb") as f:
+                        allure.attach(
+                            f.read(),
+                            name=f"{case_name}_失败截图",
+                            attachment_type=allure.attachment_type.PNG,
+                        )
+                else:
+                    logger.warning(f"截图文件不存在或未生成: {filepath}")
+            except Exception as e:
+                logger.warning(f"截图或附加截图失败: {e}")

@@ -1,12 +1,14 @@
 """JAKA 官网登录页面对象
 
 JAKA 官网（Nuxt.js）登录流程：
-  1. 打开首页，点击"登录"入口
-  2. 切换到"密码登录"标签
-  3. 填写手机号/邮箱 + 密码
-  4. 勾选用户协议复选框
-  5. 点击登录按钮
-  6. 登录成功判断：页面出现"退出登录"
+  1. 打开首页，检查是否已登录
+  2. 如果已登录，直接验证"退出登录"
+  3. 如果未登录，点击"登录"入口打开弹窗
+  4. 切换到"密码登录"标签
+  5. 填写手机号/邮箱 + 密码
+  6. 勾选用户协议复选框
+  7. 点击登录按钮
+  8. 登录成功判断：页面出现"退出登录"
 """
 
 from playwright.sync_api import Page
@@ -36,17 +38,39 @@ class JakaLoginPage(BasePage):
         self._logout_text = page.get_by_text("退出登录")
         # 登录弹窗容器
         self._login_dialog = page.locator(".login .inner")
+        # 🔥 已登录状态标志：修改密码（登录后才会显示）
+        self._change_password_text = page.get_by_text("修改密码")
 
     def navigate(self, url: str):
-        """打开 JAKA 官网首页并等待登录入口加载"""
+        """打开 JAKA 官网首页并等待页面加载"""
         # JAKA 官网资源较多，CI 中容易超时，使用 domcontentloaded + 60s 超时
         super().navigate(url, wait_until="domcontentloaded", timeout=60000)
-        # 等待登录入口可见
-        self.wait_for_visible(self._login_entry)
+        # 等待页面主要内容加载完成
+        self.page.wait_for_load_state("networkidle", timeout=30000)
         logger.info(f"JAKA 官网首页加载完成，URL: {self.page.url}")
 
+    def _is_logged_in(self) -> bool:
+        """检查当前是否已登录"""
+        try:
+            # 检查是否存在"退出登录"或"修改密码"文本
+            if self._logout_text.is_visible(timeout=2000):
+                logger.info("检测到已登录状态（退出登录可见）")
+                return True
+            if self._change_password_text.is_visible(timeout=2000):
+                logger.info("检测到已登录状态（修改密码可见）")
+                return True
+            return False
+        except Exception:
+            return False
+
     def login(self, username: str, password: str):
-        """执行完整登录流程：打开弹窗 → 切换密码登录 → 填写 → 勾选协议 → 点击登录"""
+        """执行完整登录流程：检查状态 → 打开弹窗 → 切换密码登录 → 填写 → 勾选协议 → 点击登录"""
+        
+        # 🔥 首先检查是否已登录
+        if self._is_logged_in():
+            logger.info("已检测到登录状态，跳过登录流程")
+            return
+        
         # 点击首页"登录"入口，打开登录弹窗
         logger.info("点击首页登录入口")
         
@@ -57,13 +81,17 @@ class JakaLoginPage(BasePage):
         # 使用 JavaScript 点击，绕过可能的遮挡
         self._login_entry.evaluate("element => element.click()")
         
-        # 等待登录弹窗出现（增加超时时间）
+        # 等待登录弹窗出现
         logger.info("等待登录弹窗出现...")
         try:
             self._login_dialog.wait_for(state="visible", timeout=15000)
             logger.info("登录弹窗已出现")
         except Exception as e:
             logger.error(f"登录弹窗未出现: {e}")
+            # 检查是否其实已经登录了
+            if self._is_logged_in():
+                logger.info("虽然弹窗未出现，但检测到已登录状态，继续执行")
+                return
             self.page.screenshot(path="login_dialog_not_found.png")
             raise
         
