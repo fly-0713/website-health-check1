@@ -40,7 +40,7 @@ class JakaLoginPage(BasePage):
     def navigate(self, url: str):
         """打开 JAKA 官网首页并等待登录入口加载"""
         # JAKA 官网资源较多，CI 中容易超时，使用 domcontentloaded + 60s 超时
-        super().navigate(url, wait_until="domcontentloaded", timeout=60000)
+        super().navigate(url)
         # 等待登录入口可见
         self.wait_for_visible(self._login_entry)
         logger.info(f"JAKA 官网首页加载完成，URL: {self.page.url}")
