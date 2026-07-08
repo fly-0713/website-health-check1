@@ -84,6 +84,9 @@ jobs:
           JAKA_USERNAME: ${{ secrets.JAKA_USERNAME }}
           JAKA_PASSWORD: ${{ secrets.JAKA_PASSWORD }}
           
+          # 🔥 强制启用无头模式
+          CI: "true"
+          
           # 测试文件配置
           TEST_FILE: ${{ matrix.test_file }}
           ALLURE_RESULTS_DIR: report/allure_results_${{ matrix.allure_prefix }}
@@ -91,10 +94,11 @@ jobs:
           # 创建独立的报告目录
           mkdir -p $ALLURE_RESULTS_DIR
           
-          # 执行指定的测试文件
+          # 🔥 添加 --headless 参数强制无头模式
           python ci_run.py testcases/${{ matrix.test_file }} \
             --alluredir=$ALLURE_RESULTS_DIR \
-            --maxfail=5
+            --maxfail=5 \
+            --headless
           
           # 生成 Allure 报告
           allure generate $ALLURE_RESULTS_DIR -o report/allure_report_${{ matrix.allure_prefix }} --clean
@@ -149,9 +153,10 @@ jobs:
           SITE_NAME: ${{ matrix.site_name }}
           TEST_FILE: ${{ matrix.test_file }}
           ALLURE_PREFIX: ${{ matrix.allure_prefix }}
+          ENV_NAME: "production"
         run: |
-          # 修改路径为 venv/Scripts/
-          python /Scripts/send_dingtalk_notify.py
+          # ✅ 修正路径：使用项目根目录下的 scripts/
+          python scripts/send_dingtalk_notify.py
 
       - name: 输出报告访问地址 - ${{ matrix.site_name }}
         if: always()
