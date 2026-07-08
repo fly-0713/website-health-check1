@@ -8,51 +8,94 @@ CI 环境用法：
 本地开发仍推荐使用 main.py。
 """
 
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+"""
+CI 运行入口脚本
+支持通过命令行参数运行 pytest 测试
+"""
+
 import os
-import subprocess
 import sys
+import argparse
+import subprocess
+from pathlib import Path
 
-import pytest
+# 添加项目根目录到 Python 路径
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
 
-# 项目根目录
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+from common.logger import logger
 
-# 确保项目根目录在 sys.path 中
-sys.path.insert(0, PROJECT_ROOT)
 
-# 产物路径
-ALLURE_RESULTS = os.path.join(PROJECT_ROOT, "report", "allure_results")
-ALLURE_REPORT = os.path.join(PROJECT_ROOT, "report", "allure_report")
-HTML_REPORT = os.path.join(PROJECT_ROOT, "report", "html", "report.html")
-
-os.makedirs(ALLURE_RESULTS, exist_ok=True)
-os.makedirs(os.path.dirname(HTML_REPORT), exist_ok=True)
-
-# pytest 参数：强制无头模式 + Allure + HTML 报告
-pytest_args = [
-    "testcases/",
-    "-v",
-    "--tb=short",
-    "--headless",
-    f"--alluredir={ALLURE_RESULTS}",
-    f"--html={HTML_REPORT}",
-    "--self-contained-html",
-]
-
-# 支持从命令行透传额外参数（如 -k / -m）
-pytest_args += sys.argv[1:]
-
-# 执行测试
-exit_code = pytest.main(pytest_args)
-
-# 生成 Allure HTML 报告
-allure_cmd = os.environ.get("ALLURE_CMD", "allure")
-try:
-    subprocess.run(
-        [allure_cmd, "generate", ALLURE_RESULTS, "-o", ALLURE_REPORT, "--clean"],
-        check=False,
+def main():
+    parser = argparse.ArgumentParser(description="运行 UI 自动化测试")
+    parser.add_argument(
+        "test_path",
+        nargs="?",
+        default="testcases/",
+        help="测试文件或目录路径（默认: testcases/）"
     )
-except FileNotFoundError:
-    print(f"[警告] allure 命令未找到（{allure_cmd}），跳过 Allure 报告生成")
+    parser.add_argument(
+        "-m", "--markers",
+        help="pytest -m 标记表达式"
+    )
+    parser.add_argument(
+        "-k", "--keyword",
+        help="pytest -k 关键字表达式"
+    )
+    parser.add_argument(
+        "--alluredir",
+        default="report/allure_results",
+        help="Allure 结果输出目录"
+    )
+    parser.add_argument(
+        "--maxfail",
+        type=int,
+        default=5,
+        help="最大失败次数后停止（默认: 5）"
+    )
+    parser.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="详细输出"
+    )
+    
+    args = parser.parse_args()
+    
+    # 构建 pytest 命令
+    cmd = [
+        sys.executable,
+        "-m", "pytest",
+        args.test_path,
+        f"--alluredir={args.alluredir}",
+        f"--maxfail={args.maxfail}",
+        "--tb=short",
+    ]
+    
+    if args.verbose:
+        cmd.append("-v")
+    
+    if args.markers:
+        cmd.extend(["-m", args.markers])
+    
+    if args.keyword:
+        cmd.extend(["-k", args.keyword])
+    
+    # 设置环境变量
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(project_root)
+    
+    logger.info(f"执行命令: {' '.join(cmd)}")
+    logger.info(f"测试路径: {args.test_path}")
+    logger.info(f"Allure 输出目录: {args.alluredir}")
+    
+    # 执行测试
+    result = subprocess.run(cmd, env=env)
+    
+    # 返回退出码
+    sys.exit(result.returncode)
 
-sys.exit(exit_code)
+
+if __name__ == "__main__":
+    main()

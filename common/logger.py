@@ -28,7 +28,10 @@ class CaseLogHandler(logging.Handler):
     """按用例缓冲日志，支持 allure 按用例附加"""
 
     def emit(self, record):
-        _log_buffer.append(self.format(record))
+        try:
+            _log_buffer.append(self.format(record))
+        except Exception:
+            pass
 
 
 def get_case_log() -> str:
@@ -61,6 +64,7 @@ def _create_logger(name: str = "ui_test") -> logging.Logger:
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(logging.Formatter(LOG_FORMAT, DATE_FORMAT))
+    console_handler.handleError = lambda record: None  # 忽略句柄失效错误
     log.addHandler(console_handler)
 
     # --- 文件 Handler ---
@@ -71,6 +75,7 @@ def _create_logger(name: str = "ui_test") -> logging.Logger:
     )
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(logging.Formatter(LOG_FORMAT, DATE_FORMAT))
+    file_handler.handleError = lambda record: None  # 忽略句柄失效错误
     log.addHandler(file_handler)
 
     # --- 用例缓冲 Handler ---

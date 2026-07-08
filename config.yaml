@@ -1,27 +1,20 @@
 # 多环境配置文件
 # 通过环境变量 ENV 切换：set ENV=staging / set ENV=production
 # 默认使用 test 环境
+# CI 环境通过 GitHub Secrets 注入账号密码
 
-test:
+# MES 后台配置
+mes:
   base_url: "https://mes.jaka.com/"
   headless: false
   timeout: 10000
   accounts:
-    - username: "<from-env>"
-      password: "<from-env>"
+    - username: "${MES_USERNAME}"
+      password: "${MES_PASSWORD}"
 
-staging:
-  base_url: "https://mes-staging.jaka.com/"
-  headless: false
-  timeout: 10000
+# JAKA 官网配置（独立于 MES）
+jaka_web:
+  base_url: "https://www.jaka.com/zh"
   accounts:
-    - username: "<from-env>"
-      password: "<from-env>"
-
-production:
-  base_url: "https://mes.jaka.com/"
-  headless: true
-  timeout: 15000
-  accounts:
-    - username: "<from-env>"
-      password: "<from-env>"
+    - username: "${JAKA_USERNAME}"
+      password: "${JAKA_PASSWORD}"

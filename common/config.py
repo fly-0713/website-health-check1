@@ -5,66 +5,110 @@
     from common.config import config
     url = config.base_url
     headless = config.headless
+
+注意：
+    config 是懒加载单例，第一次访问属性时才真正读取 YAML。
+    这允许 main.py 先设置 ENV 环境变量，再由 pytest 收集用例时加载配置。
 """
 
 import os
-
+import re
 import yaml
+from pathlib import Path
 
 
 class Config:
-    """配置对象，将 YAML 配置映射为属性"""
-
-    def __init__(self, data: dict):
-        self._data = data
-
+    """配置管理类 - 支持环境变量替换"""
+    
+    _instance = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._load_config()
+        return cls._instance
+    
+    def _load_config(self):
+        """加载配置文件并替换环境变量"""
+        config_path = Path(__file__).parent.parent / "config.yaml"
+        
+        with open(config_path, 'r', encoding='utf-8') as f:
+            raw_config = yaml.safe_load(f)
+        
+        # 递归替换所有配置中的环境变量
+        self._config = self._replace_env_vars(raw_config)
+    
+    def _replace_env_vars(self, obj):
+        """递归替换字符串中的 ${ENV_VAR} 格式的环境变量"""
+        if isinstance(obj, str):
+            # 匹配 ${VAR_NAME} 格式
+            pattern = r'\$\{([^}]+)\}'
+            matches = re.findall(pattern, obj)
+            for var_name in matches:
+                env_value = os.getenv(var_name, "")
+                obj = obj.replace(f"${{{var_name}}}", env_value)
+            return obj
+        elif isinstance(obj, dict):
+            return {k: self._replace_env_vars(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._replace_env_vars(item) for item in obj]
+        else:
+            return obj
+    
+    # ========== MES 后台配置 ==========
     @property
-    def base_url(self) -> str:
-        return self._data.get("base_url", "")
-
+    def mes_config(self):
+        """获取 MES 后台完整配置"""
+        return self._config.get("mes", {})
+    
     @property
-    def headless(self) -> bool:
-        return self._data.get("headless", False)
-
+    def base_url(self):
+        """MES 后台 URL"""
+        return self.mes_config.get("base_url", "https://mes.jaka.com/")
+    
     @property
-    def timeout(self) -> int:
-        return self._data.get("timeout", 10000)
-
+    def headless(self):
+        """MES 后台无头模式"""
+        return self.mes_config.get("headless", False)
+    
     @property
-    def accounts(self) -> list:
-        return self._data.get("accounts", [])
-
-    def get_account(self, index: int = 0) -> dict:
-        """获取指定索引的账号信息"""
-        if index < len(self.accounts):
+    def timeout(self):
+        """MES 后台超时时间"""
+        return self.mes_config.get("timeout", 10000)
+    
+    @property
+    def accounts(self):
+        """MES 后台账号列表"""
+        return self.mes_config.get("accounts", [])
+    
+    def get_account(self, index=0):
+        """获取 MES 后台指定索引的账号"""
+        if self.accounts and len(self.accounts) > index:
             return self.accounts[index]
-        return {}
+        return {"username": "", "password": ""}
+    
+    # ========== JAKA 官网配置 ==========
+    @property
+    def jaka_config(self):
+        """获取 JAKA 官网完整配置"""
+        return self._config.get("jaka_web", {})
+    
+    @property
+    def jaka_base_url(self):
+        """JAKA 官网 URL"""
+        return self.jaka_config.get("base_url", "https://www.jaka.com/zh")
+    
+    @property
+    def jaka_accounts(self):
+        """JAKA 官网账号列表"""
+        return self.jaka_config.get("accounts", [])
+    
+    def get_jaka_account(self, index=0):
+        """获取 JAKA 官网指定索引的账号"""
+        if self.jaka_accounts and len(self.jaka_accounts) > index:
+            return self.jaka_accounts[index]
+        return {"username": "", "password": ""}
 
 
-def load_config() -> Config:
-    """加载配置文件，根据环境变量 ENV 选择环境"""
-    config_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "config.yaml",
-    )
-
-    with open(config_path, "r", encoding="utf-8") as f:
-        all_config = yaml.safe_load(f)
-
-    # 通过环境变量切换环境，默认 test
-    env = os.environ.get("ENV", "test")
-    env_config = all_config.get(env)
-    if env_config is None:
-        raise ValueError(f"未找到环境配置: {env}，可选: {list(all_config.keys())}")
-
-    # 支持 CI 通过环境变量注入账号（覆盖 yaml 中的明文）
-    ci_username = os.environ.get("TEST_USERNAME")
-    ci_password = os.environ.get("TEST_PASSWORD")
-    if ci_username and ci_password:
-        env_config["accounts"] = [{"username": ci_username, "password": ci_password}]
-
-    return Config(env_config)
-
-
-# 全局配置实例
-config = load_config()
+# 单例实例
+config = Config()

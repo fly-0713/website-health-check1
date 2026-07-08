@@ -7,6 +7,8 @@
     python main.py -m smoke                 # 只运行 smoke 标记的用例
     python main.py --open                   # 运行后自动打开 Allure 报告
     python main.py --no-clean               # 运行前不清理旧产物
+    python main.py --env h5                 # 指定环境（默认 test，可选 h5/staging/production）
+    # CI 中通过环境变量指定环境：请用 CI_ENV 而非 ENV（避免本地残留干扰）
 """
 
 import argparse
@@ -48,6 +50,11 @@ ALLURE_REPORT_DIR = os.path.join(PROJECT_ROOT, "report", "allure_report")
 def parse_args():
     """解析命令行参数"""
     parser = argparse.ArgumentParser(description="UI 自动化测试主程序")
+    parser.add_argument(
+        "--env",
+        default=None,
+        help="指定运行环境（test/h5/staging/production），不传则使用系统 ENV 变量，都没有时默认 test",
+    )
     parser.add_argument(
         "--headless",
         action="store_true",
@@ -183,20 +190,44 @@ def open_allure_report(args):
             print(f"[报告] 已打开 HTML 报告: {html_path}")
 
 
+def apply_env(args):
+    """确定并设置运行环境
+
+    优先级：--env 参数 > CI 专用环境变量 CI_ENV > 默认 test
+    注意：此处不读取系统 ENV 变量，避免 PowerShell 会话残留导致污染。
+         如需在 CI 中通过环境变量指定环境，请使用 CI_ENV（不是 ENV）。
+    """
+    if args.env:
+        # 命令行显式指定，最高优先级
+        env = args.env
+    else:
+        # CI 专用环境变量（与普通 ENV 隔离，避免本地残留变量干扰）
+        env = os.environ.get("CI_ENV", "test")
+    # 强制覆盖 ENV，无论系统中原有什么值
+    os.environ["ENV"] = env
+    return env
+
+
 def main():
     args, remaining = parse_args()
+
+    # 0. 确定运行环境（必须在 config 被访问之前设置 ENV）
+    env = apply_env(args)
+    # 通知懒加载的 config 重新加载（防止模块被其他地方提前访问过）
+    from common.config import config
+    config.reload()
 
     # 1. 运行前清理旧产物
     if not args.no_clean:
         clean_old_artifacts()
 
-    # 2. 获取 logger
+    # 2. 获取 logger（ENV 确定后再导入 config）
     from common.logger import logger as test_logger
     from common.config import config
 
     test_logger.info("=" * 50)
     test_logger.info("开始运行 UI 自动化测试")
-    test_logger.info(f"运行参数: headless={args.headless}, k={args.k}, m={args.m}, env={config.base_url}")
+    test_logger.info(f"运行参数: headless={args.headless}, k={args.k}, m={args.m}, env={env} ({config.base_url})")
     test_logger.info("=" * 50)
 
     # 3. 执行测试

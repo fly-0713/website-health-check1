@@ -1,34 +1,15 @@
-name: UI 自动化测试
+name: 系统检查
 
 on:
-  # 定时触发：工作日每天 06:30 UTC（北京时间 14:30）
   schedule:
-    - cron: '30 6 * * 1-5'
-
-  # 手动触发，支持参数选择
+    - cron: '0 0 * * 1-5'
   workflow_dispatch:
     inputs:
-      env:
-        description: '测试环境'
-        required: true
-        default: 'test'
-        type: choice
-        options: [test, staging, production]
-      pytest_marks:
-        description: 'pytest -m 标记（为空运行全部）'
-        required: false
-        default: ''
-      pytest_keyword:
-        description: 'pytest -k 关键字（为空运行全部）'
-        required: false
-        default: ''
       notify:
         description: '是否发送通知'
         required: false
         default: 'true'
         type: boolean
-
-  # Push 触发（仅关键目录变更时触发）
   push:
     branches: [main, develop]
     paths:
@@ -38,23 +19,36 @@ on:
       - 'config.yaml'
       - 'requirements*.txt'
       - 'ci_run.py'
-  pull_request:
-    branches: [main]
-    paths:
-      - 'testcases/**'
-      - 'pages/**'
 
-# 同一分支只保留最新一次运行
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   ui-test:
-    runs-on: ubuntu-latest   # GitHub 公共云（无法访问内网）
-    # runs-on: self-hosted        # 内网自托管 Runner（可访问 mes.jaka.com）
+    runs-on: ubuntu-latest
     timeout-minutes: 30
-  
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        test_file:
+          - test_login.py
+          - test_JAKA_login.py
+        include:
+          - test_file: test_login.py
+            site_name: MES后台
+            webhook_secret: DINGTALK_MES_WEBHOOK
+            allure_prefix: mes
+            username_secret: MES_USERNAME
+            password_secret: MES_PASSWORD
+          - test_file: test_JAKA_login.py
+            site_name: JAKA官网
+            webhook_secret: DINGTALK_JAKA_WEBHOOK
+            allure_prefix: jaka
+            username_secret: JAKA_USERNAME
+            password_secret: JAKA_PASSWORD
+    
     steps:
       - name: 检出代码
         uses: actions/checkout@v4.2.2
@@ -81,96 +75,118 @@ jobs:
       - name: 安装 Playwright 浏览器
         run: playwright install chromium
 
-      - name: 执行 UI 测试
+      - name: 执行测试 - ${{ matrix.site_name }}
+        id: test
         env:
-          ENV: ${{ github.event.inputs.env || 'test' }}
-          TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
-          TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
-          ALLURE_CMD: allure
+          # 从 Secrets 注入账号密码（每个站点使用自己的）
+          MES_USERNAME: ${{ secrets.MES_USERNAME }}
+          MES_PASSWORD: ${{ secrets.MES_PASSWORD }}
+          JAKA_USERNAME: ${{ secrets.JAKA_USERNAME }}
+          JAKA_PASSWORD: ${{ secrets.JAKA_PASSWORD }}
+          
+          # 测试文件配置
+          TEST_FILE: ${{ matrix.test_file }}
+          ALLURE_RESULTS_DIR: report/allure_results_${{ matrix.allure_prefix }}
         run: |
-          ARGS=()
-          MARKS="${{ github.event.inputs.pytest_marks }}"
-          KEYWORD="${{ github.event.inputs.pytest_keyword }}"
-          [ -n "$MARKS" ] && ARGS+=("-m" "$MARKS")
-          [ -n "$KEYWORD" ] && ARGS+=("-k" "$KEYWORD")
-          python ci_run.py "${ARGS[@]}"
+          # 创建独立的报告目录
+          mkdir -p $ALLURE_RESULTS_DIR
+          
+          # 执行指定的测试文件
+          python ci_run.py testcases/${{ matrix.test_file }} \
+            --alluredir=$ALLURE_RESULTS_DIR \
+            --maxfail=5
+          
+          # 生成 Allure 报告
+          allure generate $ALLURE_RESULTS_DIR -o report/allure_report_${{ matrix.allure_prefix }} --clean
 
-      - name: 上传 Allure 原始数据
+      - name: 上传 Allure 原始数据 - ${{ matrix.site_name }}
         if: always()
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: allure-results-${{ github.run_number }}
-          path: report/allure_results/
+          name: allure-results-${{ matrix.allure_prefix }}-${{ github.run_number }}
+          path: report/allure_results_${{ matrix.allure_prefix }}/
           retention-days: 7
 
-      - name: 上传 Allure HTML 报告
+      - name: 上传 Allure HTML 报告 - ${{ matrix.site_name }}
         if: always()
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: allure-report-${{ github.run_number }}
-          path: report/allure_report/
+          name: allure-report-${{ matrix.allure_prefix }}-${{ github.run_number }}
+          path: report/allure_report_${{ matrix.allure_prefix }}/
           retention-days: 30
 
-      - name: 上传 pytest-HTML 报告
-        if: always()
-        uses: actions/upload-artifact@v4.6.2
-        with:
-          name: pytest-html-report-${{ github.run_number }}
-          path: report/html/report.html
-          retention-days: 30
-
-      - name: 上传失败截图
+      - name: 上传失败截图 - ${{ matrix.site_name }}
         if: failure()
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: failure-screenshots-${{ github.run_number }}
+          name: failure-screenshots-${{ matrix.allure_prefix }}-${{ github.run_number }}
           path: screenshots/
           retention-days: 7
 
-      - name: 发布 Allure 报告到 GitHub Pages
+      - name: 发布 Allure 报告到 GitHub Pages - ${{ matrix.site_name }}
         if: always()
         uses: peaceiris/actions-gh-pages@v4.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./report/allure_report
-          destination_dir: reports/${{ github.run_number }}
+          publish_dir: ./report/allure_report_${{ matrix.allure_prefix }}
+          destination_dir: ${{ matrix.allure_prefix }}/reports/${{ github.run_number }}
           keep_files: true
 
-      - name: 更新最新报告入口页
+      - name: 更新最新报告入口页 - ${{ matrix.site_name }}
         if: always()
         uses: peaceiris/actions-gh-pages@v4.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           keep_files: true
-          publish_dir: ./report/allure_report
-          destination_dir: latest
+          publish_dir: ./report/allure_report_${{ matrix.allure_prefix }}
+          destination_dir: ${{ matrix.allure_prefix }}/latest
 
-      - name: 输出报告访问地址
+      - name: 发送钉钉通知 - ${{ matrix.site_name }}
+        if: always() && github.event.inputs.notify != 'false'
+        env:
+          WEBHOOK: ${{ secrets[matrix.webhook_secret] }}
+          STATUS: ${{ job.status }}
+          SITE_NAME: ${{ matrix.site_name }}
+          TEST_FILE: ${{ matrix.test_file }}
+          ALLURE_PREFIX: ${{ matrix.allure_prefix }}
+        run: |
+          python scripts/send_dingtalk_notify.py
+
+      - name: 输出报告访问地址 - ${{ matrix.site_name }}
         if: always()
         run: |
           OWNER=$(echo "${{ github.repository }}" | cut -d'/' -f1)
           REPO=$(echo "${{ github.repository }}" | cut -d'/' -f2)
           echo "=================================================="
-          echo "📊 最新报告（每次覆盖）: https://$OWNER.github.io/$REPO/latest/index.html"
-          echo "📅 本次报告（永久保留）: https://$OWNER.github.io/$REPO/reports/${{ github.run_number }}/index.html"
+          echo "📊 ${{ matrix.site_name }} 最新报告: https://$OWNER.github.io/$REPO/${{ matrix.allure_prefix }}/latest/index.html"
+          echo "📅 ${{ matrix.site_name }} 本次报告: https://$OWNER.github.io/$REPO/${{ matrix.allure_prefix }}/reports/${{ github.run_number }}/index.html"
           echo "=========================================="
 
-      - name: 钉钉通知
-        if: always()
+  summary-notify:
+    runs-on: ubuntu-latest
+    needs: ui-test
+    if: always() && github.event.inputs.notify != 'false'
+    steps:
+      - name: 发送汇总钉钉通知
+        env:
+          WEBHOOK: ${{ secrets.DINGTALK_SUMMARY_WEBHOOK }}
         run: |
-          STATUS="${{ job.status }}"
-          EMOJI="✅"
-          [ "$STATUS" != "success" ] && EMOJI="❌"
-          ENV_NAME="${{ github.event.inputs.env }}"
-          [ -z "$ENV_NAME" ] && ENV_NAME="test"
-          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ -z "$WEBHOOK" ]; then
+            echo "未配置汇总 Webhook，跳过"
+            exit 0
+          fi
+          
           OWNER=$(echo "${{ github.repository }}" | cut -d'/' -f1)
           REPO=$(echo "${{ github.repository }}" | cut -d'/' -f2)
-          REPORT_URL="https://$OWNER.github.io/$REPO/latest/index.html"
-          MSG="## ${EMOJI} UI自动化测试完成\n\n- **环境**: ${ENV_NAME}\n- **状态**: ${STATUS}\n- **分支**: ${{ github.ref_name }}\n- **触发**: ${{ github.actor }}\n- **运行**: [#${{ github.run_number }}](${RUN_URL})\n- **报告**: [查看Allure报告](${REPORT_URL})"
-          curl -s -X POST "${{ secrets.DINGTALK_WEBHOOK }}" \
+          MSG="## 📊 UI自动化测试汇总\n\n"
+          MSG="${MSG}- **分支**: ${{ github.ref_name }}\n"
+          MSG="${MSG}- **触发**: ${{ github.actor }}\n"
+          MSG="${MSG}- **运行**: [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\n\n"
+          MSG="${MSG}### 各站点报告\n"
+          MSG="${MSG}- [MES后台报告](https://$OWNER.github.io/$REPO/mes/latest/index.html)\n"
+          MSG="${MSG}- [JAKA官网报告](https://$OWNER.github.io/$REPO/jaka/latest/index.html)"
+          
+          curl -s -X POST "$WEBHOOK" \
             -H 'Content-Type: application/json' \
-            -d "{\"msgtype\":\"markdown\",\"markdown\":{\"title\":\"UI自动化测试报告\",\"text\":\"${MSG}\"}}" \
+            -d "{\"msgtype\":\"markdown\",\"markdown\":{\"title\":\"UI自动化测试汇总\",\"text\":\"${MSG}\"}}" \
             || echo '钉钉通知发送失败（不影响流程）'
-      
-      
