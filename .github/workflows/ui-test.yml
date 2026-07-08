@@ -151,7 +151,7 @@ jobs:
           ALLURE_PREFIX: ${{ matrix.allure_prefix }}
         run: |
           # 修改路径为 venv/Scripts/
-          python venv/Scripts/send_dingtalk_notify.py
+          python /Scripts/send_dingtalk_notify.py
 
       - name: 输出报告访问地址 - ${{ matrix.site_name }}
         if: always()
