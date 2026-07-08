@@ -150,7 +150,8 @@ jobs:
           TEST_FILE: ${{ matrix.test_file }}
           ALLURE_PREFIX: ${{ matrix.allure_prefix }}
         run: |
-          python scripts/send_dingtalk_notify.py
+          # 修改路径为 venv/Scripts/
+          python venv/Scripts/send_dingtalk_notify.py
 
       - name: 输出报告访问地址 - ${{ matrix.site_name }}
         if: always()
@@ -178,7 +179,7 @@ jobs:
           
           OWNER=$(echo "${{ github.repository }}" | cut -d'/' -f1)
           REPO=$(echo "${{ github.repository }}" | cut -d'/' -f2)
-          MSG="## 📊 UI自动化测试汇总\n\n"
+          MSG="## 📊 系统检查汇总\n\n"
           MSG="${MSG}- **分支**: ${{ github.ref_name }}\n"
           MSG="${MSG}- **触发**: ${{ github.actor }}\n"
           MSG="${MSG}- **运行**: [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\n\n"
