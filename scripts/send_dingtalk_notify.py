@@ -27,35 +27,69 @@ def load_test_results(allure_dir: str) -> dict:
         "errors": [],
         "durations": [],
         "status_code": 200,
-        "error_type": "无"
+        "error_type": "无",
+        "test_status": "passed"  # 🔥 新增：整体测试状态
     }
     
     if not os.path.exists(allure_dir):
         print(f"⚠️ Allure 目录不存在: {allure_dir}")
+        results["test_status"] = "failed"
+        results["status_code"] = 404
+        results["errors"] = ["Allure 目录不存在"]
         return results
     
-    for file_path in Path(allure_dir).glob("*.json"):
+    # 检查是否有测试结果文件
+    json_files = list(Path(allure_dir).glob("*.json"))
+    if not json_files:
+        print(f"⚠️ 没有找到 JSON 文件")
+        results["test_status"] = "failed"
+        results["status_code"] = 404
+        results["errors"] = ["没有找到测试结果文件"]
+        return results
+    
+    for file_path in json_files:
         try:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
+            # 🔥 调试：打印原始数据
+            print(f"\n📄 文件: {file_path.name}")
+            
             # 跳过不是测试结果的文件
             if "status" not in data:
+                print(f"   - ⚠️ 跳过：没有 status 字段")
                 continue
-                
-            if data.get("status") == "passed":
+            
+            # 🔥 打印所有关键字段
+            print(f"   - status: {data.get('status')}")
+            print(f"   - name: {data.get('name', 'unknown')}")
+            print(f"   - fullName: {data.get('fullName', 'unknown')}")
+            
+            # 🔥 检查 status 字段
+            status = data.get("status", "").lower()
+            
+            if status == "passed":
                 results["passed"] += 1
-            elif data.get("status") == "failed":
+                print(f"   - ✅ 用例通过")
+            elif status == "failed":
                 results["failed"] += 1
                 status_details = data.get("statusDetails", {})
                 error_msg = status_details.get("message", "未知错误")
                 results["errors"].append(error_msg)
-            elif data.get("status") in ["skipped", "broken"]:
+                results["test_status"] = "failed"  # 🔥 标记为失败
+                print(f"   - ❌ 用例失败: {error_msg[:100]}")
+            elif status in ["skipped", "broken"]:
                 results["skipped"] += 1
+                results["test_status"] = "failed"
+                print(f"   - ⚠️ 用例跳过/损坏")
+            else:
+                print(f"   - ⚠️ 未知状态: {status}")
+                results["failed"] += 1
+                results["test_status"] = "failed"
             
             results["total"] += 1
             
-            # 🔥 尝试多种方式获取 duration
+            # 读取 duration
             duration_sec = 0
             
             # 方式1: data["time"]["duration"] (毫秒)
@@ -70,14 +104,14 @@ def load_test_results(allure_dir: str) -> dict:
             if duration_sec == 0 and "stop" in data and "start" in data:
                 duration_sec = (data["stop"] - data["start"]) / 1000
             
-            # 方式4: 如果还是0，从文件名中的时间戳获取（可选）
-            
             if duration_sec > 0:
                 results["durations"].append(duration_sec)
-                print(f"   - 用例 {data.get('name', 'unknown')} 耗时: {duration_sec:.2f}秒")
+                print(f"   - 耗时: {duration_sec:.2f}秒")
                 
         except Exception as e:
-            print(f"解析 Allure 文件失败 {file_path}: {e}")
+            print(f"❌ 解析 Allure 文件失败 {file_path}: {e}")
+            results["errors"].append(f"解析失败: {e}")
+            results["test_status"] = "failed"
     
     # 计算平均响应时间
     if results["durations"]:
@@ -85,8 +119,8 @@ def load_test_results(allure_dir: str) -> dict:
     else:
         results["avg_duration"] = 0
     
-    # 判断状态码
-    if results["failed"] > 0:
+    # 🔥 如果有失败，设置状态码为 500
+    if results["failed"] > 0 or results["test_status"] == "failed":
         results["status_code"] = 500
     elif results["total"] == 0:
         results["status_code"] = 404
@@ -109,28 +143,36 @@ def load_test_results(allure_dir: str) -> dict:
         else:
             results["error_type"] = "业务逻辑错误"
     
+    print(f"\n📊 统计结果:")
+    print(f"   - 总用例: {results['total']}")
+    print(f"   - 通过: {results['passed']}")
+    print(f"   - 失败: {results['failed']}")
+    print(f"   - 测试状态: {results['test_status']}")
+    print(f"   - 错误列表: {results['errors']}")
+    
     return results
 
 
 def send_dingtalk_notification(webhook: str, site_name: str, env: str, results: dict):
     """发送钉钉通知"""
-    is_success = results["failed"] == 0
+    # 🔥 使用 test_status 判断整体状态
+    is_success = results.get("test_status") == "passed" and results["failed"] == 0
     status_text = "✅ 正常" if is_success else "❌ 异常"
     
     error_msg = "；".join(results["errors"][:3]) if results["errors"] else "无"
     if len(results["errors"]) > 3:
         error_msg += f" ... 共 {len(results['errors'])} 个失败"
     
-    # 🔥 使用北京时间
+    # 使用北京时间
     beijing_time = datetime.now(BEIJING_TZ).strftime('%Y-%m-%d %H:%M:%S')
     
-    # 🔥 格式化响应时间，如果为0则显示 "N/A"
+    # 格式化响应时间
     if results['avg_duration'] > 0:
         duration_display = f"{results['avg_duration']:.2f} 秒"
     else:
-        duration_display = "N/A (请检查 Allure 结果)"
+        duration_display = "N/A"
     
-    # 🔥 去掉"通过/总数"行，修改表格
+    # 构建消息
     msg = f"""## {site_name}
 
 | 项目 | 内容 |
@@ -146,7 +188,7 @@ def send_dingtalk_notification(webhook: str, site_name: str, env: str, results: 
     
     # 如果有失败用例，添加失败详情
     if results["errors"]:
-        fail_details = "\n".join([f"- {e[:100]}" for e in results["errors"][:5]])
+        fail_details = "\n".join([f"- {e[:200]}" for e in results["errors"][:5]])
         if len(results["errors"]) > 5:
             fail_details += f"\n- ... 共 {len(results['errors'])} 个失败"
         msg += f"\n**失败详情:**\n{fail_details}"
@@ -192,7 +234,8 @@ def main():
         print("⚠️ 没有找到测试结果")
         results["total"] = 0
         results["passed"] = 0
-        results["failed"] = 0
+        results["failed"] = 1  # 🔥 标记为失败
+        results["test_status"] = "failed"
         results["status_code"] = 404
         results["avg_duration"] = 0
         results["error_type"] = "无测试执行"
@@ -201,8 +244,8 @@ def main():
     print(f"   - 总用例: {results['total']}")
     print(f"   - 通过: {results['passed']}")
     print(f"   - 失败: {results['failed']}")
+    print(f"   - 测试状态: {results.get('test_status', 'unknown')}")
     print(f"   - 平均响应时间: {results['avg_duration']:.2f} 秒")
-    print(f"   - 所有耗时: {results['durations']}")
     
     send_dingtalk_notification(webhook, site_name, env_name, results)
     
