@@ -8,7 +8,7 @@ JAKA 官网（Nuxt.js）登录流程：
   5. 填写手机号/邮箱 + 密码
   6. 勾选用户协议复选框
   7. 点击登录按钮
-  8. 登录成功判断：页面出现"退出登录"
+  8. 登录成功判断：鼠标悬停用户头像展开下拉菜单，检测"退出登录"
 """
 
 from playwright.sync_api import Page
@@ -34,16 +34,16 @@ class JakaLoginPage(BasePage):
         self._agree_checkbox = page.locator(".login #comm")
         # 登录按钮
         self._login_button = page.locator(".login .submit")
-        # 登录成功标志：退出登录
-        self._logout_text = page.get_by_text("退出登录")
         # 登录弹窗容器
         self._login_dialog = page.locator(".login .inner")
-        # 已登录状态标志：修改密码
-        self._change_password_text = page.get_by_text("修改密码")
+        # 🔥 用户头像/用户名 - 鼠标悬停展开下拉菜单
+        self._user_avatar = page.locator(".user-name, .el-dropdown-link, .avatar, .username").first
+        # 🔥 退出登录（在下拉菜单中）- 使用更精确的定位
+        self._logout_text = page.locator("a.f_16:has-text('退出登录')").first
         # 安全提醒弹窗
         self._security_reminder = page.get_by_text("安全提醒")
         # Cookie 弹窗相关
-        self._cookie_accept_button = page.get_by_text("接受所有的")
+        self._cookie_accept_button = page.locator("button.cky-btn-accept").first
 
     def navigate(self, url: str):
         """打开 JAKA 官网首页并等待页面加载"""
@@ -51,74 +51,91 @@ class JakaLoginPage(BasePage):
         self.page.wait_for_load_state("networkidle", timeout=30000)
         logger.info(f"JAKA 官网首页加载完成，URL: {self.page.url}")
         
-        # 🔥 先处理 Cookie 弹窗
-        self._handle_cookie_dialog()
-        
-        # 🔥 再处理安全提醒弹窗
-        self._handle_security_reminder()
+        # 处理弹窗
+        self._handle_all_dialogs()
         
         # 等待页面稳定
-        self.page.wait_for_timeout(2000)
+        self.page.wait_for_timeout(1000)
+
+    def _handle_all_dialogs(self):
+        """快速处理所有弹窗"""
+        self._handle_cookie_dialog()
+        self._handle_security_reminder_fast()
 
     def _handle_cookie_dialog(self):
         """处理 Cookie 同意弹窗"""
         try:
-            if self._cookie_accept_button.is_visible(timeout=3000):
+            if self._cookie_accept_button.is_visible(timeout=2000):
                 logger.info("检测到 Cookie 弹窗，点击接受全部")
                 self._cookie_accept_button.click()
-                self.page.wait_for_timeout(1000)
+                self.page.wait_for_timeout(500)
                 logger.info("Cookie 弹窗已关闭")
         except Exception as e:
             logger.info(f"处理 Cookie 弹窗时出错（可忽略）: {e}")
 
-    def _handle_security_reminder(self):
-        """处理安全提醒弹窗"""
+    def _handle_security_reminder_fast(self):
+        """快速处理安全提醒弹窗"""
         try:
-            # 检查安全提醒弹窗
-            if self._security_reminder.is_visible(timeout=3000):
-                logger.info("检测到安全提醒弹窗")
-                # 查找"确定"按钮
-                confirm_button = self.page.get_by_text("确定")
-                if confirm_button.is_visible(timeout=2000):
-                    confirm_button.click()
-                    self.page.wait_for_timeout(1000)
-                    logger.info("安全提醒弹窗已关闭")
-                else:
-                    # 尝试点击"取消"
-                    cancel_button = self.page.get_by_text("取消")
-                    if cancel_button.is_visible(timeout=2000):
-                        cancel_button.click()
-                        self.page.wait_for_timeout(1000)
-                        logger.info("安全提醒弹窗已关闭（点击取消）")
+            if self._security_reminder.is_visible(timeout=2000):
+                logger.info("检测到安全提醒弹窗，使用 JavaScript 强制关闭")
+                
+                confirm_btn = self.page.locator(".confirm.btn:has-text('确定')").first
+                if confirm_btn.is_visible(timeout=1000):
+                    confirm_btn.evaluate("element => element.click()")
+                    self.page.wait_for_timeout(500)
+                    logger.info("安全提醒弹窗已关闭（点击确定）")
+                    return
+                
+                logger.info("尝试使用 JavaScript 移除安全提醒弹窗")
+                self.page.evaluate("""
+                    () => {
+                        const modal = document.querySelector('.el-dialog__wrapper, .el-message-box__wrapper, [class*="dialog"], [class*="modal"]');
+                        if (modal) {
+                            modal.style.display = 'none';
+                            modal.parentNode?.removeChild(modal);
+                        }
+                        const mask = document.querySelector('.v-modal, .el-overlay');
+                        if (mask) {
+                            mask.style.display = 'none';
+                        }
+                    }
+                """)
+                self.page.wait_for_timeout(500)
+                logger.info("已通过 JavaScript 移除安全提醒弹窗")
         except Exception as e:
             logger.info(f"处理安全提醒弹窗时出错（可忽略）: {e}")
 
     def _is_logged_in(self) -> bool:
-        """检查当前是否已登录"""
+        """检查当前是否已登录 - 鼠标悬停用户头像展开下拉菜单，检查退出登录"""
         try:
-            # 🔥 检查多个登录状态标志，增加等待时间
-            if self._logout_text.is_visible(timeout=5000):
+            # 1. 先检查用户头像是否存在
+            if not self._user_avatar.is_visible(timeout=3000):
+                logger.info("用户头像不可见，未登录")
+                return False
+            
+            logger.info("检测到用户头像，鼠标悬停展开下拉菜单")
+            
+            # 2. 🔥 使用 hover 悬停展开下拉菜单（不是 click）
+            self._user_avatar.hover()
+            self.page.wait_for_timeout(500)
+            
+            # 3. 检查"退出登录"是否在下拉菜单中
+            if self._logout_text.is_visible(timeout=3000):
                 logger.info("✅ 检测到已登录状态（退出登录可见）")
+                # 点击其他地方关闭下拉菜单
+                self.page.mouse.click(0, 0)
                 return True
-            if self._change_password_text.is_visible(timeout=5000):
-                logger.info("✅ 检测到已登录状态（修改密码可见）")
-                return True
-            # 🔥 检查"登录"链接是否存在（如果不存在，可能已登录）
-            login_link = self.page.locator("a:has-text('登录')").first
-            if not login_link.is_visible(timeout=2000):
-                # "登录"链接不可见，可能已登录
-                logger.info("✅ '登录'链接不可见，可能已登录")
-                return True
+            
+            # 4. 点击其他地方关闭下拉菜单
+            self.page.mouse.click(0, 0)
             return False
+            
         except Exception as e:
             logger.info(f"检查登录状态时出错: {e}")
             return False
 
     def login(self, username: str, password: str):
         """执行完整登录流程"""
-        
-        # 首先处理可能出现的弹窗
-        self._handle_security_reminder()
         
         # 检查是否已登录
         if self._is_logged_in():
@@ -127,12 +144,8 @@ class JakaLoginPage(BasePage):
         
         # 点击首页"登录"入口
         logger.info("点击首页登录入口")
-        
-        # 确保登录按钮可见并可点击
         self._login_entry.scroll_into_view_if_needed()
-        self.page.wait_for_timeout(500)
-        
-        # 使用 JavaScript 点击
+        self.page.wait_for_timeout(300)
         self._login_entry.evaluate("element => element.click()")
         
         # 等待登录弹窗出现
@@ -142,14 +155,13 @@ class JakaLoginPage(BasePage):
             logger.info("登录弹窗已出现")
         except Exception as e:
             logger.error(f"登录弹窗未出现: {e}")
-            # 再次检查是否已经登录
             if self._is_logged_in():
                 logger.info("虽然弹窗未出现，但检测到已登录状态，继续执行")
                 return
             self.page.screenshot(path="login_dialog_not_found.png")
             raise
         
-        self.page.wait_for_timeout(1000)
+        self.page.wait_for_timeout(500)
         
         # 切换到密码登录标签
         self._switch_to_password_login()
@@ -178,9 +190,8 @@ class JakaLoginPage(BasePage):
         """切换到密码登录标签"""
         for attempt in range(1, max_retries + 1):
             logger.info(f"切换到密码登录 (尝试 {attempt}/{max_retries})")
-            
             self._password_login_tab.evaluate("element => element.click()")
-            self.page.wait_for_timeout(500)
+            self.page.wait_for_timeout(300)
             
             try:
                 self._password_input.wait_for(state="visible", timeout=5000)
@@ -189,7 +200,7 @@ class JakaLoginPage(BasePage):
             except Exception:
                 if attempt < max_retries:
                     logger.warning("密码登录标签未切换，等待后重试...")
-                    self.page.wait_for_timeout(1000)
+                    self.page.wait_for_timeout(800)
                 else:
                     raise TimeoutError(
                         f"连续 {max_retries} 次点击密码登录标签均未切换成功"
@@ -206,15 +217,19 @@ class JakaLoginPage(BasePage):
             return False
 
     def _wait_for_login_result(self, timeout: int = 15000) -> bool:
-        """等待登录结果：页面出现"退出登录"即成功"""
-        try:
-            self._logout_text.wait_for(state="visible", timeout=timeout)
-            logger.info("✅ 登录成功，已检测到'退出登录'")
-            return True
-        except Exception as e:
-            logger.error(f"等待'退出登录'超时，登录失败: {e}")
-            # 🔥 超时后再次检查是否已登录
+        """等待登录结果：鼠标悬停用户头像展开下拉菜单，检测到"退出登录"即成功"""
+        start_time = self.page.evaluate("() => Date.now()")
+        while self.page.evaluate("() => Date.now()") - start_time < timeout:
             if self._is_logged_in():
-                logger.info("虽然等待超时，但检测到已登录状态，视为成功")
+                logger.info("✅ 登录成功，已检测到'退出登录'")
                 return True
-            return False
+            
+            self.page.wait_for_timeout(1000)
+        
+        logger.error(f"等待登录成功超时")
+        if self._is_logged_in():
+            logger.info("虽然超时，但检测到已登录状态，视为成功")
+            return True
+        
+        self.page.screenshot(path="login_timeout.png")
+        return False
