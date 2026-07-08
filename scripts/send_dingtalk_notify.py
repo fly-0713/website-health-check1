@@ -28,7 +28,7 @@ def load_test_results(allure_dir: str) -> dict:
         "durations": [],
         "status_code": 200,
         "error_type": "无",
-        "test_status": "passed"  # 🔥 新增：整体测试状态
+        "test_status": "passed"
     }
     
     if not os.path.exists(allure_dir):
@@ -52,55 +52,85 @@ def load_test_results(allure_dir: str) -> dict:
             with open(file_path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
             
-            # 🔥 调试：打印原始数据
             print(f"\n📄 文件: {file_path.name}")
+            print(f"   - 完整数据: {json.dumps(data, ensure_ascii=False)[:500]}")
             
             # 跳过不是测试结果的文件
             if "status" not in data:
                 print(f"   - ⚠️ 跳过：没有 status 字段")
                 continue
             
-            # 🔥 打印所有关键字段
-            print(f"   - status: {data.get('status')}")
-            print(f"   - name: {data.get('name', 'unknown')}")
-            print(f"   - fullName: {data.get('fullName', 'unknown')}")
-            
-            # 🔥 检查 status 字段
             status = data.get("status", "").lower()
+            print(f"   - status 字段值: '{status}'")
             
-            if status == "passed":
+            # 🔥 判断是否失败：检查多种情况
+            is_failed = False
+            
+            # 情况1: status 为 failed
+            if status == "failed":
+                is_failed = True
+                print(f"   - ❌ status = failed")
+            
+            # 情况2: status 为 broken
+            elif status == "broken":
+                is_failed = True
+                print(f"   - ❌ status = broken")
+            
+            # 情况3: status 不是 passed 也不是 skipped
+            elif status not in ["passed", "skipped"]:
+                is_failed = True
+                print(f"   - ❌ 未知状态: {status}")
+            
+            # 情况4: 有 statusDetails 说明有错误
+            if "statusDetails" in data and data["statusDetails"]:
+                is_failed = True
+                print(f"   - ❌ 有 statusDetails")
+            
+            # 情况5: 有 message 字段说明有错误
+            if "message" in data and data["message"]:
+                is_failed = True
+                print(f"   - ❌ 有 message")
+            
+            if is_failed:
+                results["failed"] += 1
+                results["test_status"] = "failed"
+                # 提取错误信息
+                error_msg = ""
+                if "statusDetails" in data:
+                    details = data["statusDetails"]
+                    error_msg = details.get("message", "")
+                    if not error_msg:
+                        error_msg = details.get("trace", "")
+                if not error_msg and "message" in data:
+                    error_msg = data["message"]
+                if not error_msg:
+                    error_msg = f"测试失败，状态: {status}"
+                results["errors"].append(error_msg)
+                print(f"   - 错误信息: {error_msg[:100]}")
+            elif status == "passed":
                 results["passed"] += 1
                 print(f"   - ✅ 用例通过")
-            elif status == "failed":
-                results["failed"] += 1
-                status_details = data.get("statusDetails", {})
-                error_msg = status_details.get("message", "未知错误")
-                results["errors"].append(error_msg)
-                results["test_status"] = "failed"  # 🔥 标记为失败
-                print(f"   - ❌ 用例失败: {error_msg[:100]}")
-            elif status in ["skipped", "broken"]:
+            elif status == "skipped":
                 results["skipped"] += 1
-                results["test_status"] = "failed"
-                print(f"   - ⚠️ 用例跳过/损坏")
+                print(f"   - ⏭️ 用例跳过")
             else:
-                print(f"   - ⚠️ 未知状态: {status}")
+                # 默认标记为失败
                 results["failed"] += 1
                 results["test_status"] = "failed"
+                results["errors"].append(f"未知状态: {status}")
+                print(f"   - ⚠️ 默认标记为失败")
             
             results["total"] += 1
             
             # 读取 duration
             duration_sec = 0
             
-            # 方式1: data["time"]["duration"] (毫秒)
             if "time" in data and isinstance(data["time"], dict):
                 duration_sec = data["time"].get("duration", 0) / 1000
             
-            # 方式2: data["duration"] (毫秒)
             if duration_sec == 0 and "duration" in data:
                 duration_sec = data["duration"] / 1000
             
-            # 方式3: data["stop"] - data["start"] (毫秒)
             if duration_sec == 0 and "stop" in data and "start" in data:
                 duration_sec = (data["stop"] - data["start"]) / 1000
             
@@ -119,7 +149,7 @@ def load_test_results(allure_dir: str) -> dict:
     else:
         results["avg_duration"] = 0
     
-    # 🔥 如果有失败，设置状态码为 500
+    # 设置状态码
     if results["failed"] > 0 or results["test_status"] == "failed":
         results["status_code"] = 500
     elif results["total"] == 0:
@@ -234,7 +264,7 @@ def main():
         print("⚠️ 没有找到测试结果")
         results["total"] = 0
         results["passed"] = 0
-        results["failed"] = 1  # 🔥 标记为失败
+        results["failed"] = 1
         results["test_status"] = "failed"
         results["status_code"] = 404
         results["avg_duration"] = 0
@@ -246,6 +276,7 @@ def main():
     print(f"   - 失败: {results['failed']}")
     print(f"   - 测试状态: {results.get('test_status', 'unknown')}")
     print(f"   - 平均响应时间: {results['avg_duration']:.2f} 秒")
+    print(f"   - 错误列表: {results['errors']}")
     
     send_dingtalk_notification(webhook, site_name, env_name, results)
     
