@@ -35,6 +35,8 @@ class LoginPage(BasePage):
         self._loading_mask = page.locator(".el-loading-mask")
         # 记录登录页的 URL，用于判断是否跳转
         self._login_url = ""
+        # 🔥 存储 API 响应时间
+        self._api_response_time = 0
 
     def navigate(self, url: str):
         """打开登录页面并等待验证码加载"""
@@ -57,15 +59,41 @@ class LoginPage(BasePage):
         self.click_and_fill(self._username_input, username)
         self.click_and_fill(self._password_input, password)
         self.click_and_fill(self._captcha_input, captcha)
-        self.click(self._login_button)
+        
+        # 🔥 点击登录并测量 API 响应时间
+        self._measure_login_response_time()
 
-    def login_until_success(self, username: str, password: str) -> bool:
+    def _measure_login_response_time(self):
+        """测量登录 API 响应时间"""
+        try:
+            # 监听登录 API 请求
+            with self.page.expect_response(
+                lambda response: "login" in response.url.lower() or "auth" in response.url.lower(),
+                timeout=10000
+            ) as response_info:
+                self.click(self._login_button)
+            
+            response = response_info.value
+            timing = response.timing
+            if timing:
+                self._api_response_time = (timing.get("responseEnd", 0) - timing.get("requestStart", 0)) / 1000
+                logger.info(f"登录 API 响应时间: {self._api_response_time:.3f}秒")
+                logger.info(f"登录 API 状态码: {response.status}")
+            else:
+                self._api_response_time = 0
+                
+        except Exception as e:
+            logger.warning(f"测量 API 响应时间失败: {e}")
+            self._api_response_time = 0
+
+    def login_until_success(self, username: str, password: str) -> tuple:
         """自动识别验证码并登录，失败则刷新重试直到成功
-
-        点击登录后，同时等待两个条件：
-        - URL 跳转离开登录页 → 成功
-        - 错误提示出现 → 失败，刷新验证码重试
+        
+        Returns:
+            (是否成功, API响应时间)
         """
+        total_start = time.time()
+        
         for attempt in range(1, self.MAX_RETRY + 1):
             captcha = self._get_captcha_text()
             logger.info(f"第 {attempt} 次尝试，验证码识别结果: {captcha}")
@@ -75,8 +103,11 @@ class LoginPage(BasePage):
             # 等待登录结果：URL跳转=成功，错误提示=失败
             success = self._wait_for_login_result(timeout=5000)
             if success:
+                total_time = time.time() - total_start
                 logger.info(f"第 {attempt} 次尝试登录成功！当前 URL: {self.page.url}")
-                return True
+                logger.info(f"登录总耗时: {total_time:.3f}秒")
+                logger.info(f"API 响应时间: {self._api_response_time:.3f}秒")
+                return True, self._api_response_time
 
             # 记录失败原因
             error_msg = self._get_error_message()
@@ -90,47 +121,36 @@ class LoginPage(BasePage):
             self._wait_for_captcha_refreshed()
 
         logger.error(f"连续 {self.MAX_RETRY} 次登录失败，请检查验证码识别准确率")
-        return False
+        return False, 0
 
     def _wait_for_login_result(self, timeout: int = 8000) -> bool:
-        """点击登录后等待结果：URL跳转=成功，错误提示出现=失败
-
-        轮询检查两个条件，谁先满足就返回，避免固定 sleep 导致的时序问题。
-        注意：Loading 遮罩出现时不算错误，需等 Loading 消失后再判定。
-        """
-        interval = 300  # 每 300ms 检查一次
+        """点击登录后等待结果：URL跳转=成功，错误提示出现=失败"""
+        interval = 300
         elapsed = 0
         while elapsed < timeout:
-            # 条件1：URL 已跳转 → 成功
             if self._is_login_success():
                 return True
-            # 条件2：Loading 遮罩还在 → 继续等（不算失败）
             if self._is_loading_visible():
                 self.page.wait_for_timeout(interval)
                 elapsed += interval
                 continue
-            # 条件3：Loading 已消失，检查错误提示
             if self._is_error_message_visible():
                 return False
             self.page.wait_for_timeout(interval)
             elapsed += interval
-        # 超时未判定 → 失败
         return False
 
     def _is_loading_visible(self) -> bool:
-        """判断 Loading 遮罩是否可见"""
         try:
             return self._loading_mask.is_visible()
         except Exception:
             return False
 
     def _is_error_message_visible(self) -> bool:
-        """判断错误提示是否可见（排除 Loading 文本的干扰）"""
         try:
             if not self._message_paragraph.is_visible():
                 return False
             text = self._message_paragraph.inner_text()
-            # Loading 文本不算错误
             if text.strip().lower() == "loading":
                 return False
             return True
@@ -138,32 +158,25 @@ class LoginPage(BasePage):
             return False
 
     def _wait_for_loading_gone(self):
-        """等待 Element UI Loading 遮罩消失"""
         try:
             self._loading_mask.wait_for(state="hidden", timeout=5000)
         except Exception:
-            # 遮罩不存在或已消失，无需等待
             pass
 
     def _wait_for_captcha_refreshed(self):
-        """等待验证码图片刷新完成（图片 src 发生变化）"""
         try:
-            # 等待验证码图片重新可见且稳定
             self._captcha_image.wait_for(state="visible", timeout=3000)
-            # 额外等待图片加载完成
             self.page.wait_for_timeout(500)
         except Exception as e:
             logger.warning(f"等待验证码刷新异常: {e}")
 
     def _is_login_success(self) -> bool:
-        """正面判定：URL 已跳转离开登录页即为成功"""
         current_url = self.page.url
         if self.LOGIN_URL_KEYWORD not in current_url and current_url != self._login_url:
             return True
         return False
 
     def _get_error_message(self) -> str:
-        """获取页面上的错误提示文本，用于日志记录（排除 Loading）"""
         try:
             if not self._message_paragraph.is_visible():
                 return "(未获取到提示)"
@@ -175,9 +188,7 @@ class LoginPage(BasePage):
             return "(未获取到提示)"
 
     def get_message_text(self) -> str:
-        """获取提示消息文本"""
         return self.get_text(self._message_paragraph)
 
     def assert_message_contains(self, expected_text: str):
-        """断言提示消息包含指定文本"""
         self.assert_text_contains(self._message_paragraph, expected_text)

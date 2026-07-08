@@ -26,6 +26,7 @@ def load_test_results(allure_dir: str) -> dict:
         "skipped": 0,
         "errors": [],
         "durations": [],
+        "api_response_times": [],  # 🔥 新增：API 响应时间列表
         "status_code": 200,
         "error_type": "无",
         "test_status": "passed"
@@ -38,7 +39,6 @@ def load_test_results(allure_dir: str) -> dict:
         results["errors"] = ["Allure 目录不存在"]
         return results
     
-    # 检查是否有测试结果文件
     json_files = list(Path(allure_dir).glob("*.json"))
     if not json_files:
         print(f"⚠️ 没有找到 JSON 文件")
@@ -53,68 +53,52 @@ def load_test_results(allure_dir: str) -> dict:
                 data = json.load(f)
             
             print(f"\n📄 文件: {file_path.name}")
-            print(f"   - 完整数据: {json.dumps(data, ensure_ascii=False)[:500]}")
             
-            # 跳过不是测试结果的文件
             if "status" not in data:
                 print(f"   - ⚠️ 跳过：没有 status 字段")
                 continue
             
             status = data.get("status", "").lower()
-            print(f"   - status 字段值: '{status}'")
+            print(f"   - status: '{status}'")
             
-            # 🔥 判断是否失败：检查多种情况
+            # 🔥 从 data 中提取 API 响应时间（如果有）
+            api_response_time = 0
+            if "api_response_time" in data:
+                api_response_time = data.get("api_response_time", 0)
+                print(f"   - API 响应时间: {api_response_time:.3f}秒")
+            
+            # 判断是否失败
             is_failed = False
             
-            # 情况1: status 为 failed
-            if status == "failed":
-                is_failed = True
-                print(f"   - ❌ status = failed")
-            
-            # 情况2: status 为 broken
-            elif status == "broken":
-                is_failed = True
-                print(f"   - ❌ status = broken")
-            
-            # 情况3: status 不是 passed 也不是 skipped
-            elif status not in ["passed", "skipped"]:
-                is_failed = True
-                print(f"   - ❌ 未知状态: {status}")
-            
-            # 情况4: 有 statusDetails 说明有错误
+            # 从 statusDetails 或 message 提取错误
+            error_msg = ""
             if "statusDetails" in data and data["statusDetails"]:
+                error_msg = data["statusDetails"].get("message", "")
+                if error_msg:
+                    is_failed = True
+            if not error_msg and "message" in data and data["message"]:
+                error_msg = data["message"]
                 is_failed = True
-                print(f"   - ❌ 有 statusDetails")
             
-            # 情况5: 有 message 字段说明有错误
-            if "message" in data and data["message"]:
+            if status == "failed" or status == "broken":
                 is_failed = True
-                print(f"   - ❌ 有 message")
+            elif status not in ["passed", "skipped"] and status:
+                is_failed = True
             
             if is_failed:
                 results["failed"] += 1
                 results["test_status"] = "failed"
-                # 提取错误信息
-                error_msg = ""
-                if "statusDetails" in data:
-                    details = data["statusDetails"]
-                    error_msg = details.get("message", "")
-                    if not error_msg:
-                        error_msg = details.get("trace", "")
-                if not error_msg and "message" in data:
-                    error_msg = data["message"]
                 if not error_msg:
                     error_msg = f"测试失败，状态: {status}"
                 results["errors"].append(error_msg)
-                print(f"   - 错误信息: {error_msg[:100]}")
+                print(f"   - ❌ 失败: {error_msg[:100]}")
             elif status == "passed":
                 results["passed"] += 1
-                print(f"   - ✅ 用例通过")
+                print(f"   - ✅ 通过")
             elif status == "skipped":
                 results["skipped"] += 1
-                print(f"   - ⏭️ 用例跳过")
+                print(f"   - ⏭️ 跳过")
             else:
-                # 默认标记为失败
                 results["failed"] += 1
                 results["test_status"] = "failed"
                 results["errors"].append(f"未知状态: {status}")
@@ -122,32 +106,38 @@ def load_test_results(allure_dir: str) -> dict:
             
             results["total"] += 1
             
-            # 读取 duration
-            duration_sec = 0
+            # 🔥 保存 API 响应时间
+            if api_response_time > 0:
+                results["api_response_times"].append(api_response_time)
             
+            # 读取测试耗时
+            duration_sec = 0
             if "time" in data and isinstance(data["time"], dict):
                 duration_sec = data["time"].get("duration", 0) / 1000
-            
             if duration_sec == 0 and "duration" in data:
                 duration_sec = data["duration"] / 1000
-            
             if duration_sec == 0 and "stop" in data and "start" in data:
                 duration_sec = (data["stop"] - data["start"]) / 1000
             
             if duration_sec > 0:
                 results["durations"].append(duration_sec)
-                print(f"   - 耗时: {duration_sec:.2f}秒")
+                print(f"   - 测试耗时: {duration_sec:.2f}秒")
                 
         except Exception as e:
             print(f"❌ 解析 Allure 文件失败 {file_path}: {e}")
             results["errors"].append(f"解析失败: {e}")
             results["test_status"] = "failed"
     
-    # 计算平均响应时间
+    # 计算平均值
     if results["durations"]:
         results["avg_duration"] = sum(results["durations"]) / len(results["durations"])
     else:
         results["avg_duration"] = 0
+    
+    if results["api_response_times"]:
+        results["avg_api_response"] = sum(results["api_response_times"]) / len(results["api_response_times"])
+    else:
+        results["avg_api_response"] = 0
     
     # 设置状态码
     if results["failed"] > 0 or results["test_status"] == "failed":
@@ -178,14 +168,14 @@ def load_test_results(allure_dir: str) -> dict:
     print(f"   - 通过: {results['passed']}")
     print(f"   - 失败: {results['failed']}")
     print(f"   - 测试状态: {results['test_status']}")
-    print(f"   - 错误列表: {results['errors']}")
+    print(f"   - 平均测试耗时: {results['avg_duration']:.2f}秒")
+    print(f"   - 平均API响应: {results.get('avg_api_response', 0):.3f}秒")
     
     return results
 
 
 def send_dingtalk_notification(webhook: str, site_name: str, env: str, results: dict):
     """发送钉钉通知"""
-    # 🔥 使用 test_status 判断整体状态
     is_success = results.get("test_status") == "passed" and results["failed"] == 0
     status_text = "✅ 正常" if is_success else "❌ 异常"
     
@@ -193,16 +183,21 @@ def send_dingtalk_notification(webhook: str, site_name: str, env: str, results: 
     if len(results["errors"]) > 3:
         error_msg += f" ... 共 {len(results['errors'])} 个失败"
     
-    # 使用北京时间
     beijing_time = datetime.now(BEIJING_TZ).strftime('%Y-%m-%d %H:%M:%S')
     
-    # 格式化响应时间
+    # 格式化测试耗时
     if results['avg_duration'] > 0:
         duration_display = f"{results['avg_duration']:.2f} 秒"
     else:
         duration_display = "N/A"
     
-    # 构建消息
+    # 🔥 格式化 API 响应时间
+    if results.get('avg_api_response', 0) > 0:
+        api_response_display = f"{results['avg_api_response']:.3f} 秒"
+    else:
+        api_response_display = "未测量"
+    
+    # 🔥 新模板：包含测试耗时和服务器响应时间
     msg = f"""## {site_name}
 
 | 项目 | 内容 |
@@ -211,12 +206,12 @@ def send_dingtalk_notification(webhook: str, site_name: str, env: str, results: 
 | **检测环境** | {env} |
 | **检测状态** | **{status_text}** |
 | **响应状态码** | {results['status_code']} |
-| **响应时间** | {duration_display} |
+| **测试耗时** | {duration_display} |
+| **服务器响应** | {api_response_display} |
 | **错误信息** | {error_msg} |
 | **错误类型** | {results['error_type']} |
 """
     
-    # 如果有失败用例，添加失败详情
     if results["errors"]:
         fail_details = "\n".join([f"- {e[:200]}" for e in results["errors"][:5]])
         if len(results["errors"]) > 5:
@@ -268,6 +263,7 @@ def main():
         results["test_status"] = "failed"
         results["status_code"] = 404
         results["avg_duration"] = 0
+        results["avg_api_response"] = 0
         results["error_type"] = "无测试执行"
         results["errors"] = ["未找到测试结果文件，请检查测试是否正常执行"]
     
@@ -275,8 +271,8 @@ def main():
     print(f"   - 通过: {results['passed']}")
     print(f"   - 失败: {results['failed']}")
     print(f"   - 测试状态: {results.get('test_status', 'unknown')}")
-    print(f"   - 平均响应时间: {results['avg_duration']:.2f} 秒")
-    print(f"   - 错误列表: {results['errors']}")
+    print(f"   - 平均测试耗时: {results['avg_duration']:.2f} 秒")
+    print(f"   - 平均API响应: {results.get('avg_api_response', 0):.3f} 秒")
     
     send_dingtalk_notification(webhook, site_name, env_name, results)
     

@@ -34,10 +34,11 @@ class TestLogin:
         login_page = LoginPage(page)
         login_page.navigate(config.base_url)
 
-        success = login_page.login_until_success(
+        success, api_response_time = login_page.login_until_success(
             username=username,
             password=password,
         )
 
         assert success, f"MES 后台登录失败：连续 {LoginPage.MAX_RETRY} 次验证码识别错误"
-        logger.info(f"测试通过: {data['case_name']}，已成功进入首页")
+        logger.info(f"✅ 测试通过: {data['case_name']}，已成功进入首页")
+        logger.info(f"📊 API 响应时间: {api_response_time:.3f}秒")
