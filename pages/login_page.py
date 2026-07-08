@@ -35,8 +35,6 @@ class LoginPage(BasePage):
         self._loading_mask = page.locator(".el-loading-mask")
         # 记录登录页的 URL，用于判断是否跳转
         self._login_url = ""
-        # 🔥 存储 API 响应时间
-        self._api_response_time = 0
 
     def navigate(self, url: str):
         """打开登录页面并等待验证码加载"""
@@ -59,41 +57,10 @@ class LoginPage(BasePage):
         self.click_and_fill(self._username_input, username)
         self.click_and_fill(self._password_input, password)
         self.click_and_fill(self._captcha_input, captcha)
-        
-        # 🔥 点击登录并测量 API 响应时间
-        self._measure_login_response_time()
+        self.click(self._login_button)
 
-    def _measure_login_response_time(self):
-        """测量登录 API 响应时间"""
-        try:
-            # 监听登录 API 请求
-            with self.page.expect_response(
-                lambda response: "login" in response.url.lower() or "auth" in response.url.lower(),
-                timeout=10000
-            ) as response_info:
-                self.click(self._login_button)
-            
-            response = response_info.value
-            timing = response.timing
-            if timing:
-                self._api_response_time = (timing.get("responseEnd", 0) - timing.get("requestStart", 0)) / 1000
-                logger.info(f"登录 API 响应时间: {self._api_response_time:.3f}秒")
-                logger.info(f"登录 API 状态码: {response.status}")
-            else:
-                self._api_response_time = 0
-                
-        except Exception as e:
-            logger.warning(f"测量 API 响应时间失败: {e}")
-            self._api_response_time = 0
-
-    def login_until_success(self, username: str, password: str) -> tuple:
-        """自动识别验证码并登录，失败则刷新重试直到成功
-        
-        Returns:
-            (是否成功, API响应时间)
-        """
-        total_start = time.time()
-        
+    def login_until_success(self, username: str, password: str) -> bool:
+        """自动识别验证码并登录，失败则刷新重试直到成功"""
         for attempt in range(1, self.MAX_RETRY + 1):
             captcha = self._get_captcha_text()
             logger.info(f"第 {attempt} 次尝试，验证码识别结果: {captcha}")
@@ -103,11 +70,8 @@ class LoginPage(BasePage):
             # 等待登录结果：URL跳转=成功，错误提示=失败
             success = self._wait_for_login_result(timeout=5000)
             if success:
-                total_time = time.time() - total_start
                 logger.info(f"第 {attempt} 次尝试登录成功！当前 URL: {self.page.url}")
-                logger.info(f"登录总耗时: {total_time:.3f}秒")
-                logger.info(f"API 响应时间: {self._api_response_time:.3f}秒")
-                return True, self._api_response_time
+                return True
 
             # 记录失败原因
             error_msg = self._get_error_message()
@@ -121,7 +85,7 @@ class LoginPage(BasePage):
             self._wait_for_captcha_refreshed()
 
         logger.error(f"连续 {self.MAX_RETRY} 次登录失败，请检查验证码识别准确率")
-        return False, 0
+        return False
 
     def _wait_for_login_result(self, timeout: int = 8000) -> bool:
         """点击登录后等待结果：URL跳转=成功，错误提示出现=失败"""

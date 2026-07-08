@@ -9,7 +9,6 @@ JAKA 官网（Nuxt.js）登录流程：
   6. 登录成功判断：页面出现"退出登录"
 """
 
-import time
 from playwright.sync_api import Page
 
 from common.logger import logger
@@ -37,9 +36,6 @@ class JakaLoginPage(BasePage):
         self._logout_text = page.get_by_text("退出登录")
         # 登录弹窗容器
         self._login_dialog = page.locator(".login .inner")
-        
-        # 🔥 存储 API 响应时间
-        self._api_response_time = 0
 
     def navigate(self, url: str):
         """打开 JAKA 官网首页并等待登录入口加载"""
@@ -93,33 +89,9 @@ class JakaLoginPage(BasePage):
             logger.warning(f"勾选协议失败，尝试点击: {e}")
             self._agree_checkbox.click()
         
-        # 🔥 点击登录并测量 API 响应时间
-        logger.info("点击登录按钮，测量响应时间...")
-        self._measure_login_response_time()
-
-    def _measure_login_response_time(self):
-        """测量登录 API 响应时间"""
-        try:
-            # 监听登录 API 请求
-            with self.page.expect_response(
-                lambda response: "login" in response.url.lower() or "auth" in response.url.lower(),
-                timeout=15000
-            ) as response_info:
-                self.click(self._login_button)
-            
-            response = response_info.value
-            timing = response.timing
-            if timing:
-                self._api_response_time = (timing.get("responseEnd", 0) - timing.get("requestStart", 0)) / 1000
-                logger.info(f"登录 API 响应时间: {self._api_response_time:.3f}秒")
-                logger.info(f"登录 API 状态码: {response.status}")
-            else:
-                self._api_response_time = 0
-                logger.warning("无法获取 API 响应时间")
-                
-        except Exception as e:
-            logger.warning(f"测量 API 响应时间失败: {e}")
-            self._api_response_time = 0
+        # 点击登录
+        logger.info("点击登录按钮")
+        self.click(self._login_button)
 
     def _switch_to_password_login(self, max_retries: int = 3):
         """切换到密码登录标签，通过检测密码输入框是否出现来确认切换成功"""
@@ -143,31 +115,15 @@ class JakaLoginPage(BasePage):
                         f"连续 {max_retries} 次点击密码登录标签均未切换成功"
                     )
 
-    def login_until_success(self, username: str, password: str) -> tuple:
-        """执行登录并等待成功，返回 (是否成功, API响应时间)"""
+    def login_until_success(self, username: str, password: str) -> bool:
+        """执行登录并等待成功"""
         try:
-            # 记录整体开始时间
-            total_start = time.time()
-            
             self.login(username, password)
-            success = self._wait_for_login_result()
-            
-            # 计算整体耗时
-            total_time = time.time() - total_start
-            
-            # 如果没有测量到 API 响应时间，使用整体耗时
-            if self._api_response_time == 0:
-                self._api_response_time = total_time
-                logger.info(f"使用整体耗时作为响应时间: {self._api_response_time:.3f}秒")
-            
-            logger.info(f"测试总耗时: {total_time:.3f}秒, API响应: {self._api_response_time:.3f}秒")
-            
-            return success, self._api_response_time
-            
+            return self._wait_for_login_result()
         except Exception as e:
             logger.error(f"登录过程异常: {e}")
             self.page.screenshot(path="login_error.png")
-            return False, 0
+            return False
 
     def _wait_for_login_result(self, timeout: int = 15000) -> bool:
         """等待登录结果：页面出现"退出登录"即成功，超时即失败"""

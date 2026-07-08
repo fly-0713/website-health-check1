@@ -173,7 +173,6 @@ def send_dingtalk_notification(webhook: str, site_name: str, env: str, results: 
     else:
         duration_display = "N/A"
     
-    # 🔥 移除"服务器响应"行
     msg = f"""## {site_name}
 
 | 项目 | 内容 |
