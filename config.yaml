@@ -7,7 +7,7 @@
 mes:
   base_url: "https://mes.jaka.com/"
   headless: false
-  timeout: 10000
+  timeout: 30000
   accounts:
     - username: "${MES_USERNAME}"
       password: "${MES_PASSWORD}"

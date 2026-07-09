@@ -1,16 +1,14 @@
 """JAKA 官网登录页面对象
 
-JAKA 官网（Nuxt.js）登录流程：
-  1. 打开首页，等待页面完全加载
-  2. 关闭 Cookie 弹窗
-  3. 检查是否已登录（通过用户头像判断）
-  4. 如果已登录则跳过，否则执行登录流程
-  5. 点击"登录"入口
-  6. 切换到"密码登录"标签
-  7. 填写手机号/邮箱 + 密码
-  8. 勾选用户协议复选框
-  9. 点击登录按钮
-  10. 登录成功判断：检查用户头像是否出现
+JAKA 官网登录流程：
+  1. 打开首页（默认英文版）
+  2. 切换语言到简体中文
+  3. 点击"登录"入口
+  4. 切换到"密码登录"标签
+  5. 填写手机号/邮箱 + 密码
+  6. 勾选用户协议复选框
+  7. 点击登录按钮
+  8. 登录成功判断：检查用户头像是否出现
 """
 
 import time
@@ -25,11 +23,10 @@ class JakaLoginPage(BasePage):
 
     def __init__(self, page: Page):
         super().__init__(page)
-        # 🔥 登录入口 - 根据实际 HTML 结构精确定位
-        # 登录按钮在 .btn_box 容器内，class="btn"
-        self._login_entry = page.locator(".btn_box .btn:has-text('登录')").first
-        # 备用定位器
-        self._login_entry_alt = page.locator("a.btn:has-text('登录'), .btn_box a:has-text('登录')").first
+        # 语言切换按钮（英文版页面上的 "English"）
+        self._lang_switch = page.locator(".lag, .lag .h_f_l6, .lag span:has-text('English')").first
+        # 登录入口（中文版页面）
+        self._login_entry = page.locator(".btn_box .btn:has-text('登录'), a.btn:has-text('登录')").first
         # "密码登录"标签
         self._password_login_tab = page.locator(".tab .item.f_16", has_text="密码登录")
         # 手机/邮箱输入框
@@ -43,21 +40,18 @@ class JakaLoginPage(BasePage):
         # 登录弹窗容器
         self._login_dialog = page.locator(".login .inner, .login-modal, [class*='login-dialog']").first
         # 登录成功标志：用户头像/用户名
-        self._user_avatar = page.locator(".user-name, .el-dropdown-link, .avatar, .username").first
+        self._user_avatar = page.locator(
+            ".user-name, .el-dropdown-link, .avatar, .username, "
+            ".user-info, [class*='user'], .header .name, .login-user"
+        ).first
         # 安全提醒弹窗
         self._security_reminder = page.get_by_text("安全提醒")
         # Cookie 弹窗相关
         self._cookie_accept_button = page.locator("button.cky-btn-accept").first
 
     def navigate(self, url: str):
-        """打开 JAKA 官网首页并等待页面完全加载"""
+        """打开 JAKA 官网首页并切换到中文版"""
         super().navigate(url, wait_until="domcontentloaded", timeout=60000)
-        
-        # 检查是否在中文版
-        if "/zh" not in self.page.url:
-            logger.warning(f"当前不在中文版页面: {self.page.url}，强制跳转到中文版")
-            self.page.goto("https://www.jaka.com/zh", wait_until="domcontentloaded")
-            self.page.wait_for_timeout(3000)
         
         try:
             self.page.wait_for_load_state("networkidle", timeout=30000)
@@ -65,28 +59,68 @@ class JakaLoginPage(BasePage):
         except Exception as e:
             logger.warning(f"等待 networkidle 超时，继续执行: {e}")
         
-        # 处理 Cookie 弹窗
         self._handle_cookie_dialog()
+        self._switch_to_chinese()
         
-        # 🔥 等待登录入口可见 - 使用精确的 .btn_box .btn 定位
+        # 🔥 等待登录入口可见
         try:
             self._login_entry.wait_for(state="visible", timeout=15000)
-            logger.info("JAKA 官网首页加载完成，登录入口可见（.btn_box .btn 定位）")
+            logger.info("JAKA 官网中文版加载完成，登录入口可见")
         except Exception as e:
-            logger.warning(f"主定位器失败: {e}")
-            try:
-                self._login_entry_alt.wait_for(state="visible", timeout=10000)
-                self._login_entry = self._login_entry_alt
-                logger.info("使用备用定位器找到登录入口")
-            except Exception as e2:
-                logger.error(f"登录入口未出现: {e2}")
-                self.page.screenshot(path="login_entry_not_found.png")
-                raise
+            logger.warning(f"登录入口未出现: {e}")
+            self.page.screenshot(path="login_entry_not_found.png")
+            raise
         
         self.page.wait_for_timeout(2000)
         self._handle_security_reminder_fast()
         self.page.wait_for_timeout(1000)
         logger.info("页面已完全稳定，可以执行操作")
+
+    def _switch_to_chinese(self):
+        """切换到简体中文 - 仅在非中文版时执行"""
+        current_url = self.page.url
+        if "/zh" in current_url:
+            logger.info(f"当前已是中文版，无需切换: {current_url}")
+            return
+        
+        logger.info(f"当前为非中文版: {current_url}，开始切换语言")
+        
+        try:
+            logger.info("点击语言切换按钮")
+            self._lang_switch.evaluate("element => element.click()")
+            self.page.wait_for_timeout(2000)
+            
+            logger.info("选择简体中文")
+            clicked = self.page.evaluate("""
+                () => {
+                    const spans = document.querySelectorAll('span.note');
+                    for (let span of spans) {
+                        if (span.textContent.trim() === '简体中文') {
+                            const a = span.closest('a');
+                            if (a) {
+                                a.click();
+                                return true;
+                            }
+                        }
+                    }
+                    return false;
+                }
+            """)
+            
+            if clicked:
+                logger.info("已点击简体中文选项")
+            else:
+                logger.warning("未找到简体中文选项")
+            
+            self.page.wait_for_timeout(3000)
+            logger.info(f"已切换到中文版，当前 URL: {self.page.url}")
+            self.page.wait_for_load_state("domcontentloaded", timeout=30000)
+            
+        except Exception as e:
+            logger.warning(f"切换语言失败: {e}")
+            logger.info("尝试直接访问中文版 URL")
+            self.page.goto("https://www.jaka.com/zh", wait_until="domcontentloaded")
+            self.page.wait_for_timeout(3000)
 
     def _handle_cookie_dialog(self):
         """处理 Cookie 同意弹窗"""
@@ -131,26 +165,10 @@ class JakaLoginPage(BasePage):
         except Exception as e:
             logger.info(f"处理安全提醒弹窗时出错（可忽略）: {e}")
 
-    def _is_logged_in(self) -> bool:
-        """检查当前是否已登录 - 只通过用户头像判断"""
-        try:
-            if self._user_avatar.is_visible(timeout=2000):
-                logger.info("✅ 检测到已登录状态（用户头像可见）")
-                return True
-            return False
-        except Exception as e:
-            logger.info(f"检查登录状态时出错: {e}")
-            return False
-
     def login(self, username: str, password: str):
         """执行完整登录流程"""
         
-        if self._is_logged_in():
-            logger.info("✅ 已检测到登录状态，跳过登录流程")
-            return
-        
-        self.page.wait_for_timeout(500)
-        
+        # 🔥 点击首页"登录"入口
         logger.info("点击首页登录入口")
         try:
             if not self._login_entry.is_visible(timeout=5000):
@@ -160,7 +178,6 @@ class JakaLoginPage(BasePage):
                 self._handle_cookie_dialog()
                 self.page.wait_for_timeout(1000)
             
-            # 🔥 点击登录按钮
             self._login_entry.click(timeout=5000, force=True)
             logger.info("已通过 Playwright 点击登录入口")
         except Exception as e:
@@ -205,9 +222,6 @@ class JakaLoginPage(BasePage):
                 dialog_found = True
             except Exception as e:
                 logger.error(f"登录弹窗未出现: {e}")
-                if self._is_logged_in():
-                    logger.info("虽然弹窗未出现，但检测到已登录状态，跳过登录流程")
-                    return
                 self.page.screenshot(path="login_dialog_not_found.png")
                 raise
         
@@ -264,20 +278,12 @@ class JakaLoginPage(BasePage):
         """等待登录结果：用户头像出现即成功"""
         start_time = time.time()
         while (time.time() - start_time) * 1000 < timeout:
-            if self._is_logged_in():
+            # 🔥 检查用户头像是否出现
+            if self._user_avatar.is_visible(timeout=2000):
                 logger.info("✅ 登录成功，已检测到用户头像")
                 return True
             
             self.page.wait_for_timeout(1000)
         
         logger.error(f"等待登录成功超时")
-        if self._is_logged_in():
-            logger.info("虽然超时，但检测到已登录状态，视为成功")
-            return True
-        
-        try:
-            self.page.screenshot(path="login_timeout.png", timeout=60000)
-        except Exception as e:
-            logger.warning(f"超时截图失败: {e}")
-        
         return False
