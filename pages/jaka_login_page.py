@@ -50,46 +50,43 @@ class JakaLoginPage(BasePage):
 
     def navigate(self, url: str):
         """打开 JAKA 官网首页并等待页面完全加载"""
-        # 1. 导航到页面，使用 domcontentloaded 快速加载
         super().navigate(url, wait_until="domcontentloaded", timeout=60000)
         
-        # 🔥 2. 等待网络空闲，确保所有资源加载完成
+        # 🔥 检查是否在中文版页面，如果不是则强制跳转
+        current_url = self.page.url
+        if "/zh" not in current_url:
+            logger.warning(f"当前不在中文版页面: {current_url}，强制跳转到中文版")
+            self.page.goto("https://www.jaka.com/zh", wait_until="domcontentloaded")
+            self.page.wait_for_timeout(3000)
+            logger.info(f"已跳转到中文版: {self.page.url}")
+        
         try:
             self.page.wait_for_load_state("networkidle", timeout=30000)
             logger.info("页面网络空闲，所有资源已加载")
         except Exception as e:
             logger.warning(f"等待 networkidle 超时，继续执行: {e}")
         
-        # 🔥 3. 等待登录入口可见
+        # 🔥 处理 Cookie 弹窗
+        self._handle_cookie_dialog()
+        
+        # 🔥 等待登录入口可见
         try:
             self._login_entry.wait_for(state="visible", timeout=15000)
             logger.info("JAKA 官网首页加载完成，登录入口可见")
         except Exception as e:
-            logger.warning(f"登录入口未出现，尝试刷新页面: {e}")
-            self.page.reload()
-            self.page.wait_for_timeout(3000)
-            self._login_entry.wait_for(state="visible", timeout=15000)
-            logger.info("刷新后登录入口可见")
+            logger.warning(f"登录入口未出现: {e}")
+            self.page.screenshot(path="login_entry_not_found.png")
+            raise
         
-        # 🔥 4. 等待页面稳定（关键！确保 JavaScript 执行完毕）
         self.page.wait_for_timeout(2000)
-        
-        # 5. 处理弹窗
-        self._handle_all_dialogs()
-        
-        # 🔥 6. 再次等待页面稳定
+        self._handle_security_reminder_fast()
         self.page.wait_for_timeout(1000)
         logger.info("页面已完全稳定，可以执行操作")
-
-    def _handle_all_dialogs(self):
-        """快速处理所有弹窗"""
-        self._handle_cookie_dialog()
-        self._handle_security_reminder_fast()
 
     def _handle_cookie_dialog(self):
         """处理 Cookie 同意弹窗"""
         try:
-            if self._cookie_accept_button.is_visible(timeout=2000):
+            if self._cookie_accept_button.is_visible(timeout=3000):
                 logger.info("检测到 Cookie 弹窗，点击接受全部")
                 self._cookie_accept_button.click()
                 self.page.wait_for_timeout(500)
@@ -147,20 +144,17 @@ class JakaLoginPage(BasePage):
             logger.info("✅ 已检测到登录状态，跳过登录流程")
             return
         
-        # 🔥 点击前再次确保页面稳定
         self.page.wait_for_timeout(500)
         
         logger.info("点击首页登录入口")
         try:
-            # 确保元素可见且可点击
             if not self._login_entry.is_visible(timeout=5000):
                 logger.warning("登录入口不可见，尝试刷新页面")
                 self.page.reload()
                 self.page.wait_for_timeout(3000)
-                self._handle_all_dialogs()
+                self._handle_cookie_dialog()
                 self.page.wait_for_timeout(1000)
             
-            # 🔥 使用 force=True 确保点击不被遮挡
             self._login_entry.click(timeout=5000, force=True)
             logger.info("已通过 Playwright 点击登录入口")
         except Exception as e:
@@ -172,12 +166,10 @@ class JakaLoginPage(BasePage):
                 logger.error(f"JavaScript 点击也失败: {e2}")
                 raise
         
-        # 🔥 点击后等待弹窗出现（增加等待时间）
+        self.page.wait_for_timeout(1000)
         logger.info("等待登录弹窗出现...")
-        self.page.wait_for_timeout(1000)  # 额外等待弹窗动画
         
         dialog_found = False
-        
         dialog_selectors = [
             ".login .inner",
             ".login-modal",
@@ -185,7 +177,7 @@ class JakaLoginPage(BasePage):
             "[class*='LoginDialog']",
             ".modal-content",
             ".dialog-login",
-            ".el-dialog",  # Element UI 弹窗
+            ".el-dialog",
             ".el-dialog__wrapper"
         ]
         
@@ -214,7 +206,6 @@ class JakaLoginPage(BasePage):
                 raise
         
         self.page.wait_for_timeout(500)
-        
         self._switch_to_password_login()
         
         logger.info(f"填写手机号/邮箱: {username}")
