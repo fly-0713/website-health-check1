@@ -26,11 +26,13 @@ concurrency:
 
 jobs:
   ui-test:
-    runs-on: ubuntu-latest
+    # runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04  # 改为 ubuntu-22.04，可能资源更多
     timeout-minutes: 30
     
     strategy:
       fail-fast: false
+      max-parallel: 1  # 改为 1，减少并发，可能更快获得资源
       matrix:
         test_file:
           - test_login.py
