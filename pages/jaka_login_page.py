@@ -25,10 +25,11 @@ class JakaLoginPage(BasePage):
 
     def __init__(self, page: Page):
         super().__init__(page)
-        # 登录入口
-        self._login_entry = page.locator(
-            "a:has-text('登录'), button:has-text('登录'), .login-btn, [class*='login'], [class*='Login']"
-        ).first
+        # 🔥 登录入口 - 根据实际 HTML 结构精确定位
+        # 登录按钮在 .btn_box 容器内，class="btn"
+        self._login_entry = page.locator(".btn_box .btn:has-text('登录')").first
+        # 备用定位器
+        self._login_entry_alt = page.locator("a.btn:has-text('登录'), .btn_box a:has-text('登录')").first
         # "密码登录"标签
         self._password_login_tab = page.locator(".tab .item.f_16", has_text="密码登录")
         # 手机/邮箱输入框
@@ -52,13 +53,11 @@ class JakaLoginPage(BasePage):
         """打开 JAKA 官网首页并等待页面完全加载"""
         super().navigate(url, wait_until="domcontentloaded", timeout=60000)
         
-        # 🔥 检查是否在中文版页面，如果不是则强制跳转
-        current_url = self.page.url
-        if "/zh" not in current_url:
-            logger.warning(f"当前不在中文版页面: {current_url}，强制跳转到中文版")
+        # 检查是否在中文版
+        if "/zh" not in self.page.url:
+            logger.warning(f"当前不在中文版页面: {self.page.url}，强制跳转到中文版")
             self.page.goto("https://www.jaka.com/zh", wait_until="domcontentloaded")
             self.page.wait_for_timeout(3000)
-            logger.info(f"已跳转到中文版: {self.page.url}")
         
         try:
             self.page.wait_for_load_state("networkidle", timeout=30000)
@@ -66,17 +65,23 @@ class JakaLoginPage(BasePage):
         except Exception as e:
             logger.warning(f"等待 networkidle 超时，继续执行: {e}")
         
-        # 🔥 处理 Cookie 弹窗
+        # 处理 Cookie 弹窗
         self._handle_cookie_dialog()
         
-        # 🔥 等待登录入口可见
+        # 🔥 等待登录入口可见 - 使用精确的 .btn_box .btn 定位
         try:
             self._login_entry.wait_for(state="visible", timeout=15000)
-            logger.info("JAKA 官网首页加载完成，登录入口可见")
+            logger.info("JAKA 官网首页加载完成，登录入口可见（.btn_box .btn 定位）")
         except Exception as e:
-            logger.warning(f"登录入口未出现: {e}")
-            self.page.screenshot(path="login_entry_not_found.png")
-            raise
+            logger.warning(f"主定位器失败: {e}")
+            try:
+                self._login_entry_alt.wait_for(state="visible", timeout=10000)
+                self._login_entry = self._login_entry_alt
+                logger.info("使用备用定位器找到登录入口")
+            except Exception as e2:
+                logger.error(f"登录入口未出现: {e2}")
+                self.page.screenshot(path="login_entry_not_found.png")
+                raise
         
         self.page.wait_for_timeout(2000)
         self._handle_security_reminder_fast()
@@ -155,6 +160,7 @@ class JakaLoginPage(BasePage):
                 self._handle_cookie_dialog()
                 self.page.wait_for_timeout(1000)
             
+            # 🔥 点击登录按钮
             self._login_entry.click(timeout=5000, force=True)
             logger.info("已通过 Playwright 点击登录入口")
         except Exception as e:

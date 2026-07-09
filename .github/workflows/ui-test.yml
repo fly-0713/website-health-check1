@@ -134,14 +134,16 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./report/allure_report_${{ matrix.allure_prefix }}
           destination_dir: ${{ matrix.allure_prefix }}/reports/${{ github.run_number }}
-          keep_files: true
+          keep_files: false  # 改为 false，强制覆盖
+          force_orphan: true  # 添加此选项，强制推送
 
       - name: 更新最新报告入口页 - ${{ matrix.site_name }}
         if: always()
         uses: peaceiris/actions-gh-pages@v4.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          keep_files: true
+          keep_files: false  # 改为 false
+          force_orphan: true  # 添加此选项，强制推送
           publish_dir: ./report/allure_report_${{ matrix.allure_prefix }}
           destination_dir: ${{ matrix.allure_prefix }}/latest
 
