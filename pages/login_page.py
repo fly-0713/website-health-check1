@@ -38,28 +38,33 @@ class LoginPage(BasePage):
 
     def navigate(self, url: str):
         """打开登录页面并等待验证码加载"""
-        # 🔥 CI 环境增加超时时间到 60 秒，使用 domcontentloaded 策略
+        # 🔥 使用 domcontentloaded 策略，避免 networkidle 超时
         try:
             super().navigate(url, wait_until="domcontentloaded", timeout=60000)
         except Exception as e:
             logger.warning(f"首次导航超时，重试: {e}")
-            # 重试一次
             super().navigate(url, wait_until="domcontentloaded", timeout=60000)
+        
+        # 🔥 等待页面稳定
+        self.page.wait_for_timeout(2000)
         
         # 等待验证码图片加载
         try:
             self.wait_for_visible(self._captcha_image)
+            logger.info("验证码图片已加载")
         except Exception as e:
             logger.warning(f"等待验证码超时，刷新页面重试: {e}")
             self.page.reload()
+            self.page.wait_for_timeout(2000)
             self.wait_for_visible(self._captcha_image)
+            logger.info("刷新后验证码图片已加载")
         
         self._login_url = self.page.url
 
     def _get_captcha_text(self) -> str:
         """识别验证码图片并返回文本"""
         try:
-            image_bytes = self._captcha_image.screenshot(type="png")
+            image_bytes = self._captcha_image.screenshot(type="png", timeout=10000)
             captcha_text = recognize_from_bytes(image_bytes)
             return captcha_text.strip()
         except Exception as e:
@@ -94,7 +99,13 @@ class LoginPage(BasePage):
             self.screenshot(f"登录重试第{attempt}次失败")
             # 等待 Loading 遮罩消失后再操作
             self._wait_for_loading_gone()
-            self._captcha_image.click()
+            # 🔥 点击验证码图片刷新
+            try:
+                self._captcha_image.click(timeout=5000)
+            except Exception as e:
+                logger.warning(f"点击验证码刷新失败: {e}")
+                self.page.reload()
+                self.page.wait_for_timeout(2000)
             # 等待验证码刷新完成
             self._wait_for_captcha_refreshed()
 

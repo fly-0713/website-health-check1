@@ -31,11 +31,11 @@ def take_screenshot(page: Page, name: str) -> str:
     filepath = screenshot_dir / filename
 
     try:
-        # 🔥 截图时设置超时时间为 10 秒，避免卡死
+        # 🔥 截图超时时间改为 60 秒
         page.screenshot(
             path=str(filepath),
-            timeout=10000,
-            full_page=False  # 只截取当前视口，避免全屏截图耗时过长
+            timeout=60000,  # 60 秒
+            full_page=False
         )
         logger.info(f"截图已保存: {filepath}")
         return str(filepath)
@@ -45,12 +45,11 @@ def take_screenshot(page: Page, name: str) -> str:
         try:
             page.screenshot(
                 path=str(filepath),
-                timeout=3000,
+                timeout=10000,  # 10 秒
                 full_page=False
             )
             logger.info(f"截图已保存（重试）: {filepath}")
             return str(filepath)
         except Exception as e2:
             logger.warning(f"重试截图仍然失败: {e2}")
-            # 返回空字符串，避免后续处理报错
             return ""

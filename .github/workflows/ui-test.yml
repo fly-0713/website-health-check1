@@ -2,7 +2,7 @@ name: 系统检查
 
 on:
   schedule:
-    - cron: '0 0 * * 1-5'
+    - cron: '0 20 * * 1-6'
   workflow_dispatch:
     inputs:
       notify:
