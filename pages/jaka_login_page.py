@@ -1,15 +1,16 @@
 """JAKA 官网登录页面对象
 
 JAKA 官网（Nuxt.js）登录流程：
-  1. 打开首页，关闭 Cookie 弹窗
-  2. 检查是否已登录（通过用户头像判断）
-  3. 如果已登录则跳过，否则执行登录流程
-  4. 点击"登录"入口
-  5. 切换到"密码登录"标签
-  6. 填写手机号/邮箱 + 密码
-  7. 勾选用户协议复选框
-  8. 点击登录按钮
-  9. 登录成功判断：检查用户头像是否出现
+  1. 打开首页，等待页面完全加载
+  2. 关闭 Cookie 弹窗
+  3. 检查是否已登录（通过用户头像判断）
+  4. 如果已登录则跳过，否则执行登录流程
+  5. 点击"登录"入口
+  6. 切换到"密码登录"标签
+  7. 填写手机号/邮箱 + 密码
+  8. 勾选用户协议复选框
+  9. 点击登录按钮
+  10. 登录成功判断：检查用户头像是否出现
 """
 
 import time
@@ -24,7 +25,7 @@ class JakaLoginPage(BasePage):
 
     def __init__(self, page: Page):
         super().__init__(page)
-        # 登录入口 - 支持多种元素类型
+        # 登录入口
         self._login_entry = page.locator(
             "a:has-text('登录'), button:has-text('登录'), .login-btn, [class*='login'], [class*='Login']"
         ).first
@@ -48,23 +49,37 @@ class JakaLoginPage(BasePage):
         self._cookie_accept_button = page.locator("button.cky-btn-accept").first
 
     def navigate(self, url: str):
-        """打开 JAKA 官网首页并等待页面加载"""
+        """打开 JAKA 官网首页并等待页面完全加载"""
+        # 1. 导航到页面，使用 domcontentloaded 快速加载
         super().navigate(url, wait_until="domcontentloaded", timeout=60000)
         
-        self.page.wait_for_load_state("networkidle", timeout=30000)
+        # 🔥 2. 等待网络空闲，确保所有资源加载完成
+        try:
+            self.page.wait_for_load_state("networkidle", timeout=30000)
+            logger.info("页面网络空闲，所有资源已加载")
+        except Exception as e:
+            logger.warning(f"等待 networkidle 超时，继续执行: {e}")
         
+        # 🔥 3. 等待登录入口可见
         try:
             self._login_entry.wait_for(state="visible", timeout=15000)
             logger.info("JAKA 官网首页加载完成，登录入口可见")
         except Exception as e:
             logger.warning(f"登录入口未出现，尝试刷新页面: {e}")
             self.page.reload()
-            self.page.wait_for_timeout(2000)
+            self.page.wait_for_timeout(3000)
             self._login_entry.wait_for(state="visible", timeout=15000)
             logger.info("刷新后登录入口可见")
         
+        # 🔥 4. 等待页面稳定（关键！确保 JavaScript 执行完毕）
+        self.page.wait_for_timeout(2000)
+        
+        # 5. 处理弹窗
         self._handle_all_dialogs()
-        self.page.wait_for_timeout(500)
+        
+        # 🔥 6. 再次等待页面稳定
+        self.page.wait_for_timeout(1000)
+        logger.info("页面已完全稳定，可以执行操作")
 
     def _handle_all_dialogs(self):
         """快速处理所有弹窗"""
@@ -132,14 +147,20 @@ class JakaLoginPage(BasePage):
             logger.info("✅ 已检测到登录状态，跳过登录流程")
             return
         
+        # 🔥 点击前再次确保页面稳定
+        self.page.wait_for_timeout(500)
+        
         logger.info("点击首页登录入口")
         try:
+            # 确保元素可见且可点击
             if not self._login_entry.is_visible(timeout=5000):
                 logger.warning("登录入口不可见，尝试刷新页面")
                 self.page.reload()
-                self.page.wait_for_timeout(2000)
+                self.page.wait_for_timeout(3000)
                 self._handle_all_dialogs()
+                self.page.wait_for_timeout(1000)
             
+            # 🔥 使用 force=True 确保点击不被遮挡
             self._login_entry.click(timeout=5000, force=True)
             logger.info("已通过 Playwright 点击登录入口")
         except Exception as e:
@@ -151,7 +172,10 @@ class JakaLoginPage(BasePage):
                 logger.error(f"JavaScript 点击也失败: {e2}")
                 raise
         
+        # 🔥 点击后等待弹窗出现（增加等待时间）
         logger.info("等待登录弹窗出现...")
+        self.page.wait_for_timeout(1000)  # 额外等待弹窗动画
+        
         dialog_found = False
         
         dialog_selectors = [
@@ -160,7 +184,9 @@ class JakaLoginPage(BasePage):
             "[class*='login-dialog']",
             "[class*='LoginDialog']",
             ".modal-content",
-            ".dialog-login"
+            ".dialog-login",
+            ".el-dialog",  # Element UI 弹窗
+            ".el-dialog__wrapper"
         ]
         
         for selector in dialog_selectors:
@@ -252,7 +278,6 @@ class JakaLoginPage(BasePage):
             logger.info("虽然超时，但检测到已登录状态，视为成功")
             return True
         
-        # 🔥 截图超时改为 60 秒
         try:
             self.page.screenshot(path="login_timeout.png", timeout=60000)
         except Exception as e:
