@@ -1,0 +1,2 @@
+"Status","Start Time","Stop Time","Duration in ms","Parent Suite","Suite","Sub Suite","Test Class","Test Method","Name","Description"
+"passed","Thu Jul 23 23:54:09 UTC 2026","Thu Jul 23 23:54:54 UTC 2026","45116","testcases","test_JAKA_login","TestJakaLogin","","","test_jaka_login[JAKA\u5b98\u7f51\u6b63\u5e38\u767b\u5f55]","JAKA 官网密码登录，断言页面出现""退出登录"" "

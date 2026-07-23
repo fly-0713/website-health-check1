@@ -1,0 +1,31 @@
+INFO     ui_test:conftest.py:55 通过命令行参数启用无头模式
+INFO     ui_test:conftest.py:60 检测到 CI 环境，强制使用无头模式
+INFO     ui_test:conftest.py:73 浏览器已启动（无头模式）
+INFO     ui_test:test_JAKA_login.py:29 开始测试: JAKA官网正常登录
+INFO     ui_test:test_JAKA_login.py:36 JAKA 官网登录用户名: 15188378867
+INFO     ui_test:base_page.py:28 导航到: https://www.jaka.com/zh
+WARNING  ui_test:jaka_login_page.py:60 等待 networkidle 超时，继续执行: Timeout 30000ms exceeded.
+INFO     ui_test:jaka_login_page.py:129 检测到 Cookie 弹窗，点击接受全部
+INFO     ui_test:jaka_login_page.py:132 Cookie 弹窗已关闭
+INFO     ui_test:jaka_login_page.py:86 当前为非中文版: https://www.jaka.com/en，开始切换语言
+INFO     ui_test:jaka_login_page.py:89 点击语言切换按钮
+INFO     ui_test:jaka_login_page.py:93 选择简体中文
+INFO     ui_test:jaka_login_page.py:111 已点击简体中文选项
+INFO     ui_test:jaka_login_page.py:116 已切换到中文版，当前 URL: https://www.jaka.com/zh
+INFO     ui_test:jaka_login_page.py:68 JAKA 官网中文版加载完成，登录入口可见
+INFO     ui_test:jaka_login_page.py:140 检测到安全提醒弹窗，使用 JavaScript 强制关闭
+INFO     ui_test:jaka_login_page.py:146 安全提醒弹窗已关闭（点击确定）
+INFO     ui_test:jaka_login_page.py:77 页面已完全稳定，可以执行操作
+INFO     ui_test:jaka_login_page.py:172 点击首页登录入口
+INFO     ui_test:jaka_login_page.py:182 已通过 Playwright 点击登录入口
+INFO     ui_test:jaka_login_page.py:193 等待登录弹窗出现...
+INFO     ui_test:jaka_login_page.py:221 登录弹窗已出现（原始选择器）
+INFO     ui_test:jaka_login_page.py:250 切换到密码登录 (尝试 1/3)
+INFO     ui_test:jaka_login_page.py:256 密码登录标签已切换
+INFO     ui_test:jaka_login_page.py:231 填写手机号/邮箱: 15188378867
+INFO     ui_test:jaka_login_page.py:234 填写密码
+INFO     ui_test:jaka_login_page.py:237 勾选用户协议复选框
+INFO     ui_test:jaka_login_page.py:244 点击登录按钮
+INFO     ui_test:jaka_login_page.py:283 ✅ 登录成功，已检测到用户头像
+INFO     ui_test:test_JAKA_login.py:47 ✅ 测试通过: JAKA官网正常登录，已成功登录 JAKA 官网
+INFO     ui_test:conftest.py:77 浏览器已关闭
