@@ -1,0 +1,17 @@
+INFO     ui_test:conftest.py:55 通过命令行参数启用无头模式
+INFO     ui_test:conftest.py:60 检测到 CI 环境，强制使用无头模式
+INFO     ui_test:conftest.py:73 浏览器已启动（无头模式）
+INFO     ui_test:test_login.py:25 开始测试: 自动识别验证码登录
+INFO     ui_test:test_login.py:32 MES 后台登录用户名: 15188378867
+INFO     ui_test:base_page.py:28 导航到: https://mes.jaka.com/
+INFO     ui_test:login_page.py:54 验证码图片已加载
+INFO     ui_test:login_page.py:85 第 1 次尝试，验证码识别结果: uxd3
+WARNING  ui_test:login_page.py:97 第 1 次登录失败，提示: 输入验证码有误!，刷新重试...
+INFO     ui_test:screenshot.py:40 截图已保存: screenshots/登录重试第1次失败_20260926_012139.png
+INFO     ui_test:login_page.py:85 第 2 次尝试，验证码识别结果: mmyzpf
+WARNING  ui_test:login_page.py:97 第 2 次登录失败，提示: 输入验证码有误!，刷新重试...
+INFO     ui_test:screenshot.py:40 截图已保存: screenshots/登录重试第2次失败_20260926_012144.png
+INFO     ui_test:login_page.py:85 第 3 次尝试，验证码识别结果: 5q7aj
+INFO     ui_test:login_page.py:92 第 3 次尝试登录成功！当前 URL: https://mes.jaka.com/#/
+INFO     ui_test:test_login.py:43 ✅ 测试通过: 自动识别验证码登录，已成功进入首页
+INFO     ui_test:conftest.py:77 浏览器已关闭

@@ -1,0 +1,2 @@
+"Status","Start Time","Stop Time","Duration in ms","Parent Suite","Suite","Sub Suite","Test Class","Test Method","Name","Description"
+"passed","Sat Sep 26 01:21:29 UTC 2026","Sat Sep 26 01:21:46 UTC 2026","16342","testcases","test_login","TestLogin","","","test_login[\u81ea\u52a8\u8bc6\u522b\u9a8c\u8bc1\u7801\u767b\u5f55]","自动识别验证码登录，失败则重试直到成功"
