@@ -20,9 +20,14 @@ on:
       - 'requirements*.txt'
       - 'ci_run.py'
 
+# ==========================================
+# 方案二修改处：使用固定的全局并发组
+# 作用：所有该工作流的运行，只要碰到这个组名，必须排队，绝不并发
+# 注意：cancel-in-progress 必须为 false，否则排队中的任务会被杀掉
+# ==========================================
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: gh-pages-deploy-lock
+  cancel-in-progress: false
 
 jobs:
   ui-test:
@@ -31,6 +36,9 @@ jobs:
     
     strategy:
       fail-fast: false
+      # 如果你使用了方案二，理论上下面这行可以不加。
+      # 但为了绝对防止同一个 matrix 下的两个测试同时向 gh-pages 推送导致 git 锁冲突，强烈建议加上。
+      max-parallel: 1 
       matrix:
         test_file:
           - test_login.py
@@ -78,29 +86,20 @@ jobs:
       - name: 执行测试 - ${{ matrix.site_name }}
         id: test
         env:
-          # 从 Secrets 注入账号密码（每个站点使用自己的）
           MES_USERNAME: ${{ secrets.MES_USERNAME }}
           MES_PASSWORD: ${{ secrets.MES_PASSWORD }}
           JAKA_USERNAME: ${{ secrets.JAKA_USERNAME }}
           JAKA_PASSWORD: ${{ secrets.JAKA_PASSWORD }}
-          
-          # 🔥 强制启用无头模式
           CI: "true"
-          
-          # 测试文件配置
           TEST_FILE: ${{ matrix.test_file }}
           ALLURE_RESULTS_DIR: report/allure_results_${{ matrix.allure_prefix }}
         run: |
-          # 创建独立的报告目录
           mkdir -p $ALLURE_RESULTS_DIR
-          
-          # 🔥 添加 --headless 参数强制无头模式
           python ci_run.py testcases/${{ matrix.test_file }} \
             --alluredir=$ALLURE_RESULTS_DIR \
             --maxfail=5 \
             --headless
           
-          # 生成 Allure 报告
           allure generate $ALLURE_RESULTS_DIR -o report/allure_report_${{ matrix.allure_prefix }} --clean
 
       - name: 上传 Allure 原始数据 - ${{ matrix.site_name }}
@@ -134,16 +133,16 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./report/allure_report_${{ matrix.allure_prefix }}
           destination_dir: ${{ matrix.allure_prefix }}/reports/${{ github.run_number }}
-          keep_files: false  # 改为 false，强制覆盖
-          force_orphan: true  # 添加此选项，强制推送
+          keep_files: false
+          force_orphan: true
 
       - name: 更新最新报告入口页 - ${{ matrix.site_name }}
         if: always()
         uses: peaceiris/actions-gh-pages@v4.0.0
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          keep_files: false  # 改为 false
-          force_orphan: true  # 添加此选项，强制推送
+          keep_files: false
+          force_orphan: true
           publish_dir: ./report/allure_report_${{ matrix.allure_prefix }}
           destination_dir: ${{ matrix.allure_prefix }}/latest
 
@@ -157,7 +156,6 @@ jobs:
           ALLURE_PREFIX: ${{ matrix.allure_prefix }}
           ENV_NAME: "production"
         run: |
-          # ✅ 修正路径：使用项目根目录下的 scripts/
           python scripts/send_dingtalk_notify.py
 
       - name: 输出报告访问地址 - ${{ matrix.site_name }}
